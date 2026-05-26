@@ -1,0 +1,376 @@
+{
+  "info": {
+    "_postman_id": "b4c8f2a0-1d3e-4f8a-9c1b-6a0e2b4c8d10",
+    "name": "Cobrowsing Backend",
+    "description": "Express + Socket.IO API server (EnableX, scheduling, analytics). Default base URL: http://localhost:5001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001", "type": "string" },
+    { "key": "token", "value": "", "type": "string", "description": "JWT from /auth/login; auto-set by the Login request's test script" },
+    { "key": "meetingUuid", "value": "", "type": "string" },
+    { "key": "noteId", "value": "", "type": "string" },
+    { "key": "scheduledId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "noauth" },
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane@example.com\",\n  \"phone\": \"+15555555555\",\n  \"password\": \"Sup3rSecret!\",\n  \"project_ids\": [\"premium-showcase\"]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "    console.log('Token saved to collection variable');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"Sup3rSecret!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meetings",
+      "item": [
+        {
+          "name": "Create Meeting",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Demo with Client\",\n  \"project_id\": \"premium-showcase\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings"] }
+          }
+        },
+        {
+          "name": "Get All Meetings (Dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/all", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "all"] }
+          }
+        },
+        {
+          "name": "Get Meeting by UUID",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}"]
+            }
+          }
+        },
+        {
+          "name": "Moderator Authorization Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/moderator",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "moderator"]
+            }
+          }
+        },
+        {
+          "name": "Update Transcript",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transcript\": \"Full meeting transcript text...\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/transcript",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "transcript"]
+            }
+          }
+        },
+        {
+          "name": "Add Note",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Client is interested in 3BHK units.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes"]
+            }
+          }
+        },
+        {
+          "name": "Edit Note",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Updated note text.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes", "{{noteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Note",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes", "{{noteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Force Reset Selection",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/reset",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "reset"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events / Analytics",
+      "item": [
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/events/stats", "host": ["{{baseUrl}}"], "path": ["api", "v1", "events", "stats"] }
+          }
+        },
+        {
+          "name": "Live Activity Stream",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/events/live-stream", "host": ["{{baseUrl}}"], "path": ["api", "v1", "events", "live-stream"] }
+          }
+        },
+        {
+          "name": "Meeting Activity Log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{meetingUuid}}/activity",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{meetingUuid}}", "activity"]
+            }
+          }
+        },
+        {
+          "name": "Record Behavioral Event",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"slide_view\",\n  \"slide\": \"/newSlides/Slide-7.html\",\n  \"duration_ms\": 4200,\n  \"meta\": {\n    \"actor\": \"participant\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{meetingUuid}}/record",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{meetingUuid}}", "record"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "EnableX",
+      "item": [
+        {
+          "name": "Create / Reuse Room for Meeting",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Propley Suite\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/enablex/create/{{meetingUuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "enablex", "create", "{{meetingUuid}}"]
+            }
+          }
+        },
+        {
+          "name": "Generate Token",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{meetingUuid}}\",\n  \"name\": \"Jane Doe\",\n  \"role\": \"moderator\",\n  \"socketId\": \"socket-abc-123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/enablex/token", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "token"] }
+          }
+        },
+        {
+          "name": "Test Provision (room + 2 tokens)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TestUser\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/enablex/test/provision", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "test", "provision"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedule",
+      "item": [
+        {
+          "name": "List Scheduled Meetings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] }
+          }
+        },
+        {
+          "name": "Schedule a Meeting",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_name\": \"John Smith\",\n  \"client_email\": \"john@example.com\",\n  \"client_phone\": \"+15555550101\",\n  \"start_time\": \"2026-06-01T15:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] }
+          }
+        },
+        {
+          "name": "Get Scheduled Meeting by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedule", "{{scheduledId}}"]
+            }
+          }
+        },
+        {
+          "name": "Reschedule",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_time\": \"2026-06-02T16:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}/reschedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedule", "{{scheduledId}}", "reschedule"]
+            }
+          }
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedule", "{{scheduledId}}", "cancel"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

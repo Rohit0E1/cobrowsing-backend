@@ -18,7 +18,7 @@ router.get('/', verifyToken, async (req, res) => {
 // Schedule a meeting
 router.post('/', verifyToken, async (req, res) => {
     try {
-        const { client_name, client_email, client_phone, start_time } = req.body;
+        const { client_name, client_email, client_phone, client_city, project_id, start_time } = req.body;
         if (!client_name || typeof client_name !== 'string' || !client_name.trim()) {
             return res.status(400).json({ error: 'client_name is required' });
         }
@@ -34,6 +34,12 @@ router.post('/', verifyToken, async (req, res) => {
         if (client_phone && String(client_phone).trim().length > 50) {
             return res.status(400).json({ error: 'client_phone too long (max 50)' });
         }
+        if (client_city && (typeof client_city !== 'string' || client_city.trim().length > 255)) {
+            return res.status(400).json({ error: 'client_city must be a string up to 255 chars' });
+        }
+        if (project_id !== undefined && project_id !== null && (isNaN(parseInt(project_id, 10)) || parseInt(project_id, 10) <= 0)) {
+            return res.status(400).json({ error: 'project_id must be a positive integer' });
+        }
         if (!start_time) {
             return res.status(400).json({ error: 'start_time is required' });
         }
@@ -41,6 +47,8 @@ router.post('/', verifyToken, async (req, res) => {
             client_name: client_name.trim(),
             client_email: client_email.trim().toLowerCase(),
             client_phone: client_phone ? String(client_phone).trim() : null,
+            client_city: client_city ? client_city.trim() : null,
+            project_id: project_id ? parseInt(project_id, 10) : null,
             start_time
         });
         res.status(201).json(meeting);
@@ -48,6 +56,21 @@ router.post('/', verifyToken, async (req, res) => {
         console.error('[SCHEDULE] schedule error:', err);
         const status = err.message.includes('future') || err.message.includes('Invalid') ? 400 : 500;
         res.status(status).json({ error: err.message || 'Failed to schedule meeting' });
+    }
+});
+
+// Lookup a customer by email or phone (derived from past scheduled_meetings)
+router.get('/customers/lookup', verifyToken, async (req, res) => {
+    try {
+        const { email, phone } = req.query;
+        if (!email && !phone) {
+            return res.status(400).json({ error: 'email or phone query param required' });
+        }
+        const match = await SchedulingService.lookupCustomer({ email, phone });
+        res.json({ match });
+    } catch (err) {
+        console.error('[SCHEDULE] lookupCustomer error:', err);
+        res.status(500).json({ error: 'Lookup failed' });
     }
 });
 

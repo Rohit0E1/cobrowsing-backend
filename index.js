@@ -20,6 +20,7 @@ const eventsRouter = require("./src/routes/events");
 const projectsRouter = require("./src/routes/projects");
 const enablexRouter = require("./src/enablex/enablexRoutes");
 const scheduleRouter = require("./src/routes/schedule");
+const copilotRouter = require("./src/routes/copilot");
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use("/api/v1/events", eventsRouter);
 app.use("/api/v1/enablex", enablexRouter);
 app.use("/projects", projectsRouter);
 app.use("/api/v1/schedule", scheduleRouter);
+app.use("/api/v1/copilot", copilotRouter);
 
 // Use HTTPS if SSL certs exist (production), fall back to HTTP (local dev with ngrok)
 const sslKeyPath = process.env.SSL_KEY || "./certs/server.key";

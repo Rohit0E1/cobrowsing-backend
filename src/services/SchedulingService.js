@@ -10,7 +10,7 @@ function validateId(id) {
 }
 
 const SchedulingService = {
-    async schedule(createdBy, { client_name, client_email, client_phone, start_time }) {
+    async schedule(createdBy, { client_name, client_email, client_phone, client_city, project_id, start_time }) {
         const start = new Date(start_time);
         if (isNaN(start.getTime())) throw new Error('Invalid start_time');
         if (start <= new Date()) throw new Error('start_time must be in the future');
@@ -22,10 +22,10 @@ const SchedulingService = {
         try {
             const res = await pool.query(
                 `INSERT INTO scheduled_meetings
-                 (client_name, client_email, client_phone, start_time, end_time, status, calendar_event_id, created_by)
-                 VALUES ($1, $2, $3, $4, $5, 'scheduled', $6, $7)
+                 (client_name, client_email, client_phone, client_city, project_id, start_time, end_time, status, calendar_event_id, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8, $9)
                  RETURNING *`,
-                [client_name, client_email, client_phone || null, start, end, null, createdBy]
+                [client_name, client_email, client_phone || null, client_city || null, project_id || null, start, end, null, createdBy]
             );
             meeting = res.rows[0];
         } catch (dbErr) {
@@ -170,6 +170,35 @@ const SchedulingService = {
         const res = await pool.query(
             'SELECT * FROM scheduled_meetings WHERE id = $1 AND created_by = $2',
             [safeId, userId]
+        );
+        return res.rows[0] || null;
+    },
+
+    async lookupCustomer({ email, phone }) {
+        const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
+        const trimmedPhone = phone ? String(phone).trim() : null;
+        if (!trimmedEmail && !trimmedPhone) return null;
+
+        const conditions = [];
+        const params = [];
+        if (trimmedEmail) {
+            params.push(trimmedEmail);
+            conditions.push(`LOWER(client_email) = $${params.length}`);
+        }
+        if (trimmedPhone) {
+            params.push(trimmedPhone);
+            conditions.push(`client_phone = $${params.length}`);
+        }
+
+        const res = await pool.query(
+            `SELECT DISTINCT ON (LOWER(client_email))
+                client_name, client_email, client_phone, client_city, project_id,
+                MAX(created_at) OVER (PARTITION BY LOWER(client_email)) AS last_seen_at
+             FROM scheduled_meetings
+             WHERE ${conditions.join(' OR ')}
+             ORDER BY LOWER(client_email), created_at DESC
+             LIMIT 1`,
+            params
         );
         return res.rows[0] || null;
     }

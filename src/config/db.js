@@ -128,6 +128,8 @@ const initDb = async () => {
                 client_name VARCHAR(255) NOT NULL,
                 client_email VARCHAR(255) NOT NULL,
                 client_phone VARCHAR(50),
+                client_city VARCHAR(255),
+                project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                 start_time TIMESTAMPTZ NOT NULL,
                 end_time TIMESTAMPTZ NOT NULL,
                 status VARCHAR(50) DEFAULT 'scheduled',
@@ -138,8 +140,20 @@ const initDb = async () => {
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
 
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scheduled_meetings' AND column_name='client_city') THEN
+                    ALTER TABLE scheduled_meetings ADD COLUMN client_city VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scheduled_meetings' AND column_name='project_id') THEN
+                    ALTER TABLE scheduled_meetings ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_status ON scheduled_meetings(status);
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_start ON scheduled_meetings(start_time);
+            CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_email ON scheduled_meetings(client_email);
+            CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_phone ON scheduled_meetings(client_phone);
         `);
         console.log("[DB] Database initialized and indexes verified.");
     } catch (err) {
