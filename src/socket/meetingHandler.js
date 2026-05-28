@@ -4,6 +4,27 @@ const EnableXService = require("../enablex/EnableXService");
 const AnalyticsService = require("../services/AnalyticsService");
 const { resolveLocation, extractClientIp } = require("../services/GeolocationService");
 
+const pendingModeratorExits = new Map();
+const MODERATOR_REJOIN_GRACE_MS = 15000;
+
+async function finalizeSession(io, uuid, reason) {
+    const pending = pendingModeratorExits.get(uuid);
+    if (pending) {
+        clearTimeout(pending);
+        pendingModeratorExits.delete(uuid);
+    }
+    if (!RoomState.has(uuid)) return; // already finalized
+    const meetingPk = RoomState.getMeetingPk(uuid);
+    try {
+        if (meetingPk) await AnalyticsService.summarize(meetingPk);
+    } catch (_) {}
+    try {
+        await MeetingService.reset(uuid);
+    } catch (_) {}
+    RoomState.cleanup(uuid);
+    io.to(uuid).emit("session-ended", { roomId: uuid, reason });
+}
+
 module.exports = (io, socket) => {
 
     socket.on("join-meeting", async ({ meetingId: uuid, role, name, mobile }) => {
@@ -14,6 +35,16 @@ module.exports = (io, socket) => {
         // Stash role on the socket so disconnect handler can detect a moderator
         // leaving abruptly (closed tab, network drop) and end the room for everyone.
         socket.meetingRole = role;
+
+        // A moderator (re)joining cancels any pending teardown from a brief drop/reload.
+        if (role === "moderator") {
+            const pending = pendingModeratorExits.get(uuid);
+            if (pending) {
+                clearTimeout(pending);
+                pendingModeratorExits.delete(uuid);
+                console.log(`[session] moderator re-joined ${uuid} within grace window — teardown cancelled`);
+            }
+        }
 
         if (!RoomState.has(uuid)) {
             try {
@@ -103,21 +134,25 @@ module.exports = (io, socket) => {
 
         io.to(uuid).emit("participants-update", RoomState.getParticipants(uuid));
 
-        // Abrupt moderator exit (closed tab, network drop) — finalize the
-        // session for everyone. The clean hang-up path already POSTs /reset
-        // and emits session-ended explicitly, so this only fires when that
-        // path was skipped.
+        // Defer teardown — moderator may be reloading; join-meeting clears this timer if they come back.
         if (wasModerator) {
-            const meetingPk = RoomState.getMeetingPk(uuid);
-            try {
-                if (meetingPk) await AnalyticsService.summarize(meetingPk);
-            } catch (_) {}
-            try {
-                await MeetingService.reset(uuid);
-            } catch (_) {}
-            RoomState.cleanup(uuid);
-            io.to(uuid).emit("session-ended", { roomId: uuid, reason: "moderator-disconnected" });
+            const existing = pendingModeratorExits.get(uuid);
+            if (existing) clearTimeout(existing);
+            const timer = setTimeout(() => {
+                pendingModeratorExits.delete(uuid);
+                const moderatorPresent = RoomState.getParticipants(uuid).some((p) => p.role === "moderator");
+                if (moderatorPresent) return; // reconnected, or another moderator is present
+                finalizeSession(io, uuid, "moderator-disconnected");
+            }, MODERATOR_REJOIN_GRACE_MS);
+            pendingModeratorExits.set(uuid, timer);
         }
+    });
+
+    // Explicit End Session — finalize immediately.
+    socket.on("moderator:end-session", async () => {
+        const uuid = socket.meetingId;
+        if (!uuid || socket.meetingRole !== "moderator") return;
+        await finalizeSession(io, uuid, "moderator-ended");
     });
 
     socket.on("moderator:mute-all", () => {

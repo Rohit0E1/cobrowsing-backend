@@ -57,7 +57,10 @@ app.use("/api/v1/copilot", copilotRouter);
 // Use HTTPS if SSL certs exist (production), fall back to HTTP (local dev with ngrok)
 const sslKeyPath = process.env.SSL_KEY || "./certs/server.key";
 const sslCertPath = process.env.SSL_CERT || "./certs/server.cert";
-const useSSL = fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath);
+const useSSL =
+  process.env.DISABLE_SSL !== "true" &&
+  fs.existsSync(sslKeyPath) &&
+  fs.existsSync(sslCertPath);
 
 let server;
 if (useSSL) {
