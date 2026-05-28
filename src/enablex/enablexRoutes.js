@@ -50,6 +50,15 @@ router.post("/token", async (req, res) => {
     if (!meeting) return res.status(404).json({ error: "Meeting not found." });
 
     let roomId = meeting.enablex_room_id;
+
+    if (roomId) {
+      const existing = await EnableXService.getRoom(roomId);
+      if (!existing?.room_id) {
+        await MeetingService.clearEnableXRoom(uuid);
+        roomId = null;
+      }
+    }
+
     if (!roomId) {
       const enxRoom = await EnableXService.createRoom(uuid, "Propley Suite");
       if (!enxRoom?.room_id)
