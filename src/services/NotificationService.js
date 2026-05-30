@@ -3,6 +3,7 @@ const nodemailer = require('nodemailer');
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Mandake Group <noreply@mandake-group.com>';
 const ORG_NAME = 'Mandake Group';
 const ORG_EMAIL = process.env.EMAIL_USER || 'noreply@mandake-group.com';
+const EVENT_TITLE = 'Mandake Lighthouse';
 
 let _transport = null;
 function getTransport() {
@@ -41,15 +42,20 @@ function escIcs(str) {
     return String(str).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 }
 
-function generateIcs(method, sequence, uid, start, end, summary, description, clientEmail, clientName) {
+function normalizeUid(uid) {
+    const u = String(uid || 'meet-' + Date.now());
+    return u.includes('@') ? u : u + '@mandake-lighthouse';
+}
+
+function generateIcs(method, sequence, uid, start, end, summary, description, clientEmail, clientName, salesperson) {
     const lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Mandake Group//Mandake Group//EN',
+        'PRODID:-//Mandake Group//Mandake Lighthouse//EN',
         'CALSCALE:GREGORIAN',
         `METHOD:${method}`,
         'BEGIN:VEVENT',
-        `UID:${uid}@mandake-group`,
+        `UID:${normalizeUid(uid)}`,
         `DTSTAMP:${toIcsDate(new Date())}`,
         `DTSTART:${toIcsDate(start)}`,
         `DTEND:${toIcsDate(end)}`,
@@ -57,33 +63,38 @@ function generateIcs(method, sequence, uid, start, end, summary, description, cl
         `SUMMARY:${escIcs(summary)}`,
         `DESCRIPTION:${escIcs(description)}`,
         `ORGANIZER;CN=${escIcs(ORG_NAME)}:mailto:${ORG_EMAIL}`,
-        `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${escIcs(clientName)}:mailto:${clientEmail}`,
-        'END:VEVENT',
-        'END:VCALENDAR'
+        `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${escIcs(clientName)}:mailto:${clientEmail}`
     ];
+    if (salesperson && salesperson.email) {
+        lines.push(
+            `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE;CN=${escIcs(salesperson.name || salesperson.email)}:mailto:${salesperson.email}`
+        );
+    }
+    lines.push('END:VEVENT', 'END:VCALENDAR');
     return lines.join('\r\n');
 }
 
-function icsAttachment(method, sequence, uid, start, end, summary, description, clientEmail, clientName) {
+function icsAttachment(method, sequence, uid, start, end, summary, description, clientEmail, clientName, salesperson) {
     return {
         filename: 'meeting.ics',
-        content: generateIcs(method, sequence, uid, start, end, summary, description, clientEmail, clientName),
+        content: generateIcs(method, sequence, uid, start, end, summary, description, clientEmail, clientName, salesperson),
         contentType: 'text/calendar; method=' + method
     };
 }
 
-async function sendEmail(to, subject, html, attachments) {
+async function sendEmail(to, subject, html, attachments, cc) {
     if (!isValidEmail(to)) {
         console.error('[EMAIL] Invalid email address:', to);
         return { skipped: true };
     }
+    const ccAddr = cc && isValidEmail(cc) && cc !== to ? cc : undefined;
     const transport = getTransport();
     if (!transport) {
-        console.log('[EMAIL DUMMY] To:', to, '| Subject:', subject);
+        console.log('[EMAIL DUMMY] To:', to, ccAddr ? '| Cc: ' + ccAddr : '', '| Subject:', subject);
         console.log('[EMAIL DUMMY] Body preview:', html.replace(/<[^>]+>/g, '').slice(0, 120));
         return { dummy: true };
     }
-    return transport.sendMail({ from: EMAIL_FROM, to, subject, html, attachments });
+    return transport.sendMail({ from: EMAIL_FROM, to, cc: ccAddr, subject, html, attachments });
 }
 
 const WA_API_KEY = process.env.WA_API_KEY;
@@ -139,7 +150,7 @@ function buildEmailHtml({ headerColor, headerLabel, clientName, dateStr, endStr,
         <tr>
           <td style="background:${headerColor};padding:32px 40px;text-align:center;">
             <p style="margin:0 0 4px;font-size:11px;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase;">Mandake Group</p>
-            <p style="margin:0 0 10px;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;">Mande Light House</p>
+            <p style="margin:0 0 10px;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;">Mandake Lighthouse</p>
             <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:bold;letter-spacing:0.5px;">${headerLabel}</h1>
           </td>
         </tr>
@@ -198,7 +209,7 @@ function buildEmailHtml({ headerColor, headerLabel, clientName, dateStr, endStr,
 </html>`;
 }
 
-async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomLink, meetingUid) {
+async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomLink, meetingUid, salesperson) {
     const start = new Date(startTime);
     const end = new Date(start.getTime() + 3600000);
     const dateStr = start.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -218,12 +229,12 @@ async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomL
 
     const attachment = icsAttachment(
         'REQUEST', 0, uid, start, end,
-        'Meeting — Mandake Group',
+        EVENT_TITLE,
         roomLink ? 'Join your meeting: ' + roomLink : 'Your host will share the meeting link shortly.',
-        clientEmail, clientName
+        clientEmail, clientName, salesperson
     );
 
-    await sendEmail(clientEmail, 'You have been invited to a meeting — Mandake Group', html, [attachment]);
+    await sendEmail(clientEmail, 'You have been invited to a meeting — Mandake Group', html, [attachment], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_invite_v2', [
         safeName(clientName),
@@ -232,7 +243,7 @@ async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomL
     ]).catch(e => console.error('[WHATSAPP] Invite send failed:', e.message));
 }
 
-async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime, roomLink, meetingUid) {
+async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime, roomLink, meetingUid, salesperson) {
     const start = new Date(newStartTime);
     const end = new Date(start.getTime() + 3600000);
     const dateStr = start.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -252,12 +263,12 @@ async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime
 
     const attachment = icsAttachment(
         'REQUEST', 1, uid, start, end,
-        'Meeting (Rescheduled) — Mandake Group',
+        EVENT_TITLE + ' (Rescheduled)',
         roomLink ? 'Join your meeting: ' + roomLink : 'Your host will share the meeting link shortly.',
-        clientEmail, clientName
+        clientEmail, clientName, salesperson
     );
 
-    await sendEmail(clientEmail, 'Your meeting has been rescheduled — Mandake Group', html, [attachment]);
+    await sendEmail(clientEmail, 'Your meeting has been rescheduled — Mandake Group', html, [attachment], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_reschedule_v2', [
         safeName(clientName),
@@ -266,7 +277,7 @@ async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime
     ]).catch(e => console.error('[WHATSAPP] Reschedule send failed:', e.message));
 }
 
-async function sendCancellation(clientEmail, clientName, clientPhone, startTime, meetingUid) {
+async function sendCancellation(clientEmail, clientName, clientPhone, startTime, meetingUid, salesperson) {
     const start = startTime ? new Date(startTime) : new Date();
     const end = new Date(start.getTime() + 3600000);
     const uid = meetingUid || ('meet-' + Date.now());
@@ -281,7 +292,7 @@ async function sendCancellation(clientEmail, clientName, clientPhone, startTime,
         <tr>
           <td style="background:#b94040;padding:32px 40px;text-align:center;">
             <p style="margin:0 0 4px;font-size:11px;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase;">Mandake Group</p>
-            <p style="margin:0 0 10px;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;">Mande Light House</p>
+            <p style="margin:0 0 10px;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;">Mandake Lighthouse</p>
             <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:bold;">Meeting Cancelled</h1>
           </td>
         </tr>
@@ -305,9 +316,9 @@ async function sendCancellation(clientEmail, clientName, clientPhone, startTime,
 </body>
 </html>`;
 
-    const attachment = icsAttachment('CANCEL', 2, uid, start, end, 'Meeting — Mandake Group', 'This meeting has been cancelled.', clientEmail, clientName);
+    const attachment = icsAttachment('CANCEL', 2, uid, start, end, EVENT_TITLE, 'This meeting has been cancelled.', clientEmail, clientName, salesperson);
 
-    await sendEmail(clientEmail, 'Your meeting has been cancelled — Mandake Group', html, [attachment]);
+    await sendEmail(clientEmail, 'Your meeting has been cancelled — Mandake Group', html, [attachment], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_cancel_v2', [
         safeName(clientName)
