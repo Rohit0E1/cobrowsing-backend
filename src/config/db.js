@@ -166,6 +166,24 @@ const initDb = async () => {
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_start ON scheduled_meetings(start_time);
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_email ON scheduled_meetings(client_email);
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_phone ON scheduled_meetings(client_phone);
+
+            CREATE TABLE IF NOT EXISTS clients (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(50),
+                city VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'Active',
+                deal_stage VARCHAR(50) DEFAULT 'inquiry',
+                lead_source VARCHAR(255),
+                assigned_advisor_id VARCHAR(255),
+                last_meeting VARCHAR(255),
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(LOWER(email));
         `);
 
         await pool.query(
