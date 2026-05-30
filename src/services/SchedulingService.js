@@ -9,6 +9,20 @@ function validateId(id) {
     return n;
 }
 
+async function getSalesperson(userId) {
+    try {
+        const res = await pool.query('SELECT name, email FROM users WHERE id = $1', [userId]);
+        return res.rows[0] || null;
+    } catch (e) {
+        console.error('[SCHEDULE] Salesperson lookup failed:', e.message);
+        return null;
+    }
+}
+
+function buildIcalUid(uuid) {
+    return 'mandake-' + uuid + '@mandake-lighthouse';
+}
+
 const SchedulingService = {
     async schedule(createdBy, { client_name, client_email, client_phone, client_city, project_id, start_time }) {
         const start = new Date(start_time);
@@ -17,7 +31,6 @@ const SchedulingService = {
 
         const end = new Date(start.getTime() + 3600000);
 
-        // 1. DB insert first (no calendar_event_id yet)
         let meeting;
         try {
             const res = await pool.query(
@@ -32,7 +45,6 @@ const SchedulingService = {
             throw dbErr;
         }
 
-        // 2. Create meeting room to get uuid + roomLink
         let uuid = null;
         let roomLink = null;
         try {
@@ -49,16 +61,23 @@ const SchedulingService = {
             throw roomErr;
         }
 
-        // 3. Create calendar event now that roomLink is available
+        const salesperson = await getSalesperson(createdBy);
+        const icalUid = buildIcalUid(uuid);
+
         let calendarEventId = null;
         try {
-            calendarEventId = await CalendarService.createEvent(start, client_name, client_email, roomLink);
+            calendarEventId = await CalendarService.createEvent(start, {
+                clientName: client_name,
+                clientEmail: client_email,
+                salespersonName: salesperson && salesperson.name,
+                salespersonEmail: salesperson && salesperson.email,
+                roomLink,
+                iCalUid: icalUid
+            });
         } catch (calErr) {
             console.error('[SCHEDULE] Calendar create failed:', calErr.message);
-            // Non-fatal — proceed without calendar
         }
 
-        // 4. Single UPDATE: set both uuid and calendar_event_id
         if (uuid !== null || calendarEventId !== null) {
             await pool.query(
                 'UPDATE scheduled_meetings SET meeting_uuid = $1, calendar_event_id = $2 WHERE id = $3',
@@ -69,8 +88,7 @@ const SchedulingService = {
             meeting.room_link = roomLink;
         }
 
-        // 5. Send notifications (non-fatal)
-        NotificationService.sendInvite(client_email, client_name, client_phone, start, roomLink, uuid).catch(e =>
+        NotificationService.sendInvite(client_email, client_name, client_phone, start, roomLink, icalUid, salesperson).catch(e =>
             console.error('[SCHEDULE] Notification failed:', e.message)
         );
 
@@ -101,7 +119,10 @@ const SchedulingService = {
 
         let newCalendarId = existing.calendar_event_id;
         try {
-            newCalendarId = await CalendarService.updateEvent(existing.calendar_event_id, start, existing.client_name, roomLink);
+            newCalendarId = await CalendarService.updateEvent(existing.calendar_event_id, start, {
+                clientName: existing.client_name,
+                roomLink
+            });
         } catch (calErr) {
             console.error('[RESCHEDULE] Calendar update failed:', calErr.message);
         }
@@ -114,8 +135,10 @@ const SchedulingService = {
         );
 
         const updated = res.rows[0];
+        const salesperson = await getSalesperson(userId);
+        const icalUid = existingUuid ? buildIcalUid(existingUuid) : null;
         NotificationService.sendReschedule(
-            updated.client_email, updated.client_name, updated.client_phone, start, roomLink, existingUuid
+            updated.client_email, updated.client_name, updated.client_phone, start, roomLink, icalUid, salesperson
         ).catch(e => console.error('[RESCHEDULE] Notification failed:', e.message));
 
         return updated;
@@ -146,8 +169,10 @@ const SchedulingService = {
         );
 
         const updated = res.rows[0];
+        const salesperson = await getSalesperson(userId);
+        const icalUid = existing.meeting_uuid ? buildIcalUid(existing.meeting_uuid) : null;
         NotificationService.sendCancellation(
-            updated.client_email, updated.client_name, updated.client_phone, existing.start_time, existing.meeting_uuid
+            updated.client_email, updated.client_name, updated.client_phone, existing.start_time, icalUid, salesperson
         ).catch(e => console.error('[CANCEL] Notification failed:', e.message));
 
         return updated;

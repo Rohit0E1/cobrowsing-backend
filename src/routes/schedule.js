@@ -53,8 +53,12 @@ router.post('/', verifyToken, async (req, res) => {
         });
         res.status(201).json(meeting);
     } catch (err) {
-        console.error('[SCHEDULE] schedule error:', err);
-        const status = err.message.includes('future') || err.message.includes('Invalid') ? 400 : 500;
+        const status = err.message && (err.message.includes('future') || err.message.includes('Invalid')) ? 400 : 500;
+        if (status === 400) {
+            console.warn('[SCHEDULE] rejected:', err.message);
+        } else {
+            console.error('[SCHEDULE] schedule error:', err);
+        }
         res.status(status).json({ error: err.message || 'Failed to schedule meeting' });
     }
 });
@@ -83,8 +87,12 @@ router.put('/:id/reschedule', verifyToken, async (req, res) => {
         if (!meeting) return res.status(404).json({ error: 'Scheduled meeting not found or not authorized' });
         res.json(meeting);
     } catch (err) {
-        console.error('[SCHEDULE] reschedule error:', err);
-        const status = err.message.includes('future') || err.message.includes('Invalid') || err.message.includes('cancelled') ? 400 : 500;
+        const status = err.message && (err.message.includes('future') || err.message.includes('Invalid') || err.message.includes('cancelled')) ? 400 : 500;
+        if (status === 400) {
+            console.warn('[SCHEDULE] reschedule rejected:', err.message);
+        } else {
+            console.error('[SCHEDULE] reschedule error:', err);
+        }
         res.status(status).json({ error: err.message || 'Failed to reschedule meeting' });
     }
 });
