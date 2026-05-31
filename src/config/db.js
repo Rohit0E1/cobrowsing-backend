@@ -45,8 +45,20 @@ const initDb = async () => {
             CREATE TABLE IF NOT EXISTS projects (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255),
-                slides JSONB DEFAULT '[]'
+                slides JSONB DEFAULT '[]',
+                city VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'active'
             );
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='city') THEN
+                    ALTER TABLE projects ADD COLUMN city VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='status') THEN
+                    ALTER TABLE projects ADD COLUMN status VARCHAR(50) DEFAULT 'active';
+                END IF;
+            END $$;
 
             CREATE TABLE IF NOT EXISTS meetings (
                 id SERIAL PRIMARY KEY,
@@ -155,6 +167,45 @@ const initDb = async () => {
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_email ON scheduled_meetings(client_email);
             CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_phone ON scheduled_meetings(client_phone);
         `);
+
+        await pool.query(
+            `INSERT INTO projects (name, slides, status)
+             SELECT $1, $2::jsonb, 'active'
+             WHERE NOT EXISTS (SELECT 1 FROM projects)`,
+            [
+                "Luxury Portfolio Spotlight",
+                JSON.stringify([
+                    "/newSlides/Welcome.html",
+                    "/newSlides/Slide-7.html",
+                    "/newSlides/Slide-Trust.html",
+                    "/newSlides/Slide-Portfolio.html",
+                    "/newSlides/Slide-2.html",
+                    "/newSlides/locationMapSlide1.html",
+                    "/newSlides/Slide-3.html",
+                    "/newSlides/Slide-3-2.html",
+                    "/newSlides/Slide-4.html",
+                    "/newSlides/howToReach.html",
+                    "/newSlides/Slide-Ultimate.html",
+                    "/newSlides/Slide-Marriott.html",
+                    "/newSlides/Slide-Helipad.html",
+                    "/newSlides/Slide-6.html",
+                    "/newSlides/Slide-9.html",
+                    "/newSlides/Slide-5.html",
+                    "/newSlides/Slide-10.html",
+                    "/newSlides/Slide-14.html",
+                    "/newSlides/Slide-13.html",
+                    "/newSlides/Slide-Retail.html",
+                    "/newSlides/Slide-Airbnb.html",
+                    "/newSlides/Slide-18.html",
+                    "/newSlides/Slide-Quiz.html",
+                    "/newSlides/plotViewer.html",
+                    "/newSlides/Slide-BuyNow.html",
+                    "/newSlides/Slide-PaymentSchedule.html",
+                    "/newSlides/Slide-Thanks.html",
+                ]),
+            ]
+        );
+
         console.log("[DB] Database initialized and indexes verified.");
     } catch (err) {
         console.error("[DB] Initialization error:", err);
