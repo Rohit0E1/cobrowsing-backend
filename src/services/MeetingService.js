@@ -51,18 +51,6 @@ const MeetingService = {
         return res.rows;
     },
 
-    /**
-     * Verifies moderator ownership.
-     * Returns the meeting row if authorized, false if wrong user, null if not found.
-     */
-    async verifyModerator(uuid, userId) {
-        const res = await pool.query("SELECT * FROM meetings WHERE uuid = $1", [uuid]);
-        if (!res.rows[0]) return null;
-        const meeting = res.rows[0];
-        if (meeting.moderator_id !== userId) return false;
-        return meeting;
-    },
-
     async reset(uuid) {
         const EnableXService = require("../enablex/EnableXService");
         const res = await pool.query("SELECT enablex_room_id FROM meetings WHERE uuid = $1", [uuid]);
