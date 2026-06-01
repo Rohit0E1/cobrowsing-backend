@@ -38,16 +38,14 @@ router.get("/:uuid", async (req, res) => {
     }
 });
 
-// Moderator Authorization Check
+// Moderator Session Check — any logged-in user may host any meeting
 router.get("/:uuid/moderator", verifyToken, async (req, res) => {
     try {
-        const result = await MeetingService.verifyModerator(req.params.uuid, req.user.id);
-        if (result === null) return res.status(404).json({ error: "Not found" });
-        if (result === false) return res.status(403).json({ error: "Not authorized" });
-        res.json({ status: "authorized", meeting: result });
+        const meeting = await MeetingService.getWithModerator(req.params.uuid);
+        if (!meeting) return res.status(404).json({ error: "Not found" });
+        res.json({ status: "authorized", meeting });
     } catch (err) {
-        
-        res.status(403).json({ error: "Invalid session" });
+        res.status(500).json({ error: "Invalid session" });
     }
 });
 
@@ -104,13 +102,11 @@ router.delete("/:uuid/notes/:noteId", verifyToken, async (req, res) => {
 // Force Reset Selection
 router.post("/:uuid/reset", verifyToken, async (req, res) => {
     try {
-        const result = await MeetingService.verifyModerator(req.params.uuid, req.user.id);
-        if (result === null) return res.status(404).json({ error: "Not found" });
-        if (result === false) return res.status(403).json({ error: "Not authorized" });
+        const meeting = await MeetingService.getWithModerator(req.params.uuid);
+        if (!meeting) return res.status(404).json({ error: "Not found" });
         await MeetingService.reset(req.params.uuid);
         res.json({ status: "success" });
     } catch (err) {
-        
         res.status(500).json({ error: "Reset failed" });
     }
 });

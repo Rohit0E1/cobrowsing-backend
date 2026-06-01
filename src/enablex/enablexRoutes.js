@@ -13,7 +13,6 @@ router.post("/create/:uuid", async (req, res) => {
     if (!meeting)
       return res.status(404).json({ error: "Internal meeting not found." });
 
-    // Validate existing room is still alive on EnableX
     const fullMeeting = await MeetingService.getWithModerator(uuid);
     if (fullMeeting?.enablex_room_id) {
       const existing = await EnableXService.getRoom(
