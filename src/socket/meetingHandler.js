@@ -32,11 +32,8 @@ module.exports = (io, socket) => {
 
         socket.join(uuid);
         socket.meetingId = uuid;
-        // Stash role on the socket so disconnect handler can detect a moderator
-        // leaving abruptly (closed tab, network drop) and end the room for everyone.
         socket.meetingRole = role;
 
-        // A moderator (re)joining cancels any pending teardown from a brief drop/reload.
         if (role === "moderator") {
             const pending = pendingModeratorExits.get(uuid);
             if (pending) {
@@ -68,16 +65,12 @@ module.exports = (io, socket) => {
 
         io.to(uuid).emit("participants-update", RoomState.getParticipants(uuid));
 
-        // Persist to DB — fire and forget, non-blocking
         const meetingPk = RoomState.getMeetingPk(uuid);
         if (meetingPk) {
             MeetingService.registerParticipant(meetingPk, socket.id, displayName, mobile || "", role)
                 .catch(() => {});
         }
 
-        // Async IP geolocation — never blocks the join. Resolves typically in
-        // 200-1500ms, then updates RoomState, persists to DB, and re-emits
-        // participants-update so the moderator UI gets the location row.
         (async () => {
             try {
                 const ip = extractClientIp(socket);
@@ -98,7 +91,6 @@ module.exports = (io, socket) => {
             }
         })();
 
-        // Sync current slide to late joiner
         const state = RoomState.getState(uuid);
         if (state?.currentUrl) socket.emit("urlChange", { src: state.currentUrl, isRecovered: true });
 
@@ -112,10 +104,8 @@ module.exports = (io, socket) => {
         const newState = { currentUrl: msg.src };
         RoomState.setState(uuid, newState);
 
-        // Broadcast immediately — don't wait for DB
         io.to(uuid).emit("urlChange", msg);
 
-        // Persist state + slide_view event in one transaction — fire and forget
         const meetingPk = RoomState.getMeetingPk(uuid);
         if (meetingPk) {
         const slideName = msg.title || msg.src.split("/").pop().split("?")[0];
@@ -211,9 +201,6 @@ module.exports = (io, socket) => {
         io.to(to).emit("participant:unmute-declined", { name: sender.name });
     });
 
-    // Participant -> moderators: broadcast active device labels so the
-    // moderator UI can show what mic/cam/speaker the client is using.
-    // Uses Socket.IO as a reliable fallback for EnableX's room.sendUserData.
     socket.on("client-device-info", (data = {}) => {
         const uuid = socket.meetingId;
         if (!uuid) return;
@@ -226,7 +213,6 @@ module.exports = (io, socket) => {
             role: sender.role,
             devices: data.devices || {},
         };
-        // Send only to moderators in this room (avoid noisy broadcast to peer participants).
         participants
             .filter((p) => p.role === "moderator" && p.socketId !== socket.id)
             .forEach((m) => io.to(m.socketId).emit("client-device-info", payload));

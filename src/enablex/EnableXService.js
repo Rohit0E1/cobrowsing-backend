@@ -28,10 +28,6 @@ class EnableXService {
           duration: 60,
           scheduled: false,
           auto_recording: false,
-          // active_talker:true causes the SFU to only relay "active speakers".
-          // After a refresh, the new publisher isn't immediately recognized as active,
-          // so audio doesn't flow until another join forces the talker list to re-evaluate.
-          // For a small advisory call, leaving this off relays everyone's audio reliably.
           active_talker: false,
         },
         sip: { enabled: false },
@@ -49,10 +45,6 @@ class EnableXService {
 
   static async generateToken(roomId, name, role, userRef) {
     try {
-      // user_ref must be unique per session. Using the display name causes the
-      // SFU to reject a refreshed user's audio publish because the prior session's
-      // user_ref is still parked. Caller passes socket.id; fall back to a random
-      // suffix if it's missing.
       const finalUserRef = userRef || `${name}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       console.log(`[ENX_TOKEN] room=${roomId} name="${name}" role=${role} user_ref="${finalUserRef}"`);
       const response = await axiosInstance.post(`/rooms/${roomId}/tokens`, {

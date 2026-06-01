@@ -62,10 +62,6 @@ class RoomState {
         if (p) p.location = location;
     }
 
-    /**
-     * Removes a participant by socketId across all rooms.
-     * Returns the uuid of the room they were in, or null.
-     */
     removeParticipant(socketId) {
         for (const [uuid, room] of this.#rooms) {
             if (room.participants.has(socketId)) {

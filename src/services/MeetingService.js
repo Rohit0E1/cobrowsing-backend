@@ -17,13 +17,11 @@ const MeetingService = {
         return res.rows[0];
     },
 
-    /** Returns { id, state } — used for RoomState init on first socket join */
     async recoverState(uuid) {
         const res = await pool.query("SELECT id, state FROM meetings WHERE uuid = $1", [uuid]);
         return res.rows[0] || null;
     },
 
-    /** Full row + moderator name — used by participant join REST endpoint */
     async getWithModerator(uuid) {
         const res = await pool.query(
             `SELECT m.id, m.uuid, m.start_time, m.duration, m.enablex_room_id, m.notes, u.name AS moderator_name
@@ -35,7 +33,6 @@ const MeetingService = {
         return res.rows[0] || null;
     },
 
-    /** All meetings with moderator name and participant count — dashboard */
     async getAll() {
         const res = await pool.query(`
             SELECT
@@ -67,10 +64,6 @@ const MeetingService = {
         }
     },
 
-    /**
-     * Atomically updates meeting state + inserts a slide_view event.
-     * Uses a transaction so partial failures don't leave inconsistent state.
-     */
     async recordUrlChange(meetingPk, state, slideName) {
         const client = await pool.connect();
         try {
