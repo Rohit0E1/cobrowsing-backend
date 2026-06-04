@@ -24,10 +24,15 @@ const MeetingService = {
 
     async getWithModerator(uuid) {
         const res = await pool.query(
-            `SELECT m.id, m.uuid, m.start_time, m.duration, m.enablex_room_id, m.notes, u.name AS moderator_name
+            `SELECT
+                m.*,
+                u.name AS moderator_name,
+                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
              FROM meetings m
              LEFT JOIN users u ON m.moderator_id = u.id
-             WHERE m.uuid = $1`,
+             LEFT JOIN participants p ON p.meeting_id = m.id
+             WHERE m.uuid = $1
+             GROUP BY m.id, u.name`,
             [uuid]
         );
         return res.rows[0] || null;
