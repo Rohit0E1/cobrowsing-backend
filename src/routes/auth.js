@@ -13,7 +13,9 @@ router.post("/register", async (req, res) => {
         const user = await UserService.register({ name, email, phone, password, project_ids });
         res.status(201).json({ status: "success", data: user });
     } catch (err) {
-        
+        if (err.code === "23505") {
+            return res.status(409).json({ status: "error", message: "Email already registered" });
+        }
         res.status(500).json({ status: "error", message: "Registration failed" });
     }
 });
