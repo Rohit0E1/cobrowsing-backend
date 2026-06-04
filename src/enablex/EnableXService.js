@@ -36,6 +36,12 @@ class EnableXService {
       const response = await axiosInstance.post("/rooms", roomData);
       return response.data.room;
     } catch (error) {
+      console.error("[ENX_CREATE_ROOM] failed", {
+        status: error.response?.status,
+        url: `${axiosInstance.defaults.baseURL}/rooms`,
+        data: error.response?.data,
+        message: error.message,
+      });
       const detail = error.response
         ? JSON.stringify(error.response.data)
         : error.message;
@@ -54,6 +60,12 @@ class EnableXService {
       });
       return response.data.token;
     } catch (error) {
+      console.error("[ENX_TOKEN] failed", {
+        status: error.response?.status,
+        url: `${axiosInstance.defaults.baseURL}/rooms/${roomId}/tokens`,
+        data: error.response?.data,
+        message: error.message,
+      });
       throw new Error("Failed to authenticate with EnableX media gateway.");
     }
   }
@@ -63,6 +75,12 @@ class EnableXService {
       const response = await axiosInstance.get(`/rooms/${roomId}`);
       return response.data.room;
     } catch (error) {
+      console.error("[ENX_GET_ROOM] failed", {
+        status: error.response?.status,
+        url: `${axiosInstance.defaults.baseURL}/rooms/${roomId}`,
+        data: error.response?.data,
+        message: error.message,
+      });
       return null;
     }
   }
