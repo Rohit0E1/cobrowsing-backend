@@ -120,13 +120,17 @@ const initDb = async () => {
                 duration INTEGER,
                 user_name VARCHAR(255),
                 user_mobile VARCHAR(50),
-                user_title VARCHAR(255)
+                user_title VARCHAR(255),
+                meta JSONB DEFAULT '{}'
             );
 
             DO $$
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='user_title') THEN
                     ALTER TABLE events ADD COLUMN user_title VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='meta') THEN
+                    ALTER TABLE events ADD COLUMN meta JSONB DEFAULT '{}';
                 END IF;
             END $$;
 

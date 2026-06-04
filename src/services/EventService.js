@@ -47,14 +47,15 @@ const EventService = {
      * Records a behavioral event + updates meeting-level analytics counter.
      * Wrapped in a transaction so both succeed or both fail.
      */
-    async record(meetingPk, { event_id, name, time, duration, user_name, user_mobile }) {
+    async record(meetingPk, { event_id, name, time, duration, user_name, user_mobile, meta }) {
         const activityTime = time ? new Date(time) : new Date();
+        const metaJson = meta && typeof meta === "object" ? meta : {};
         const client = await pool.connect();
         try {
             await client.query("BEGIN");
             await client.query(
-                "INSERT INTO events (meeting_id, event_id, name, time, duration, user_name, user_mobile) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                [meetingPk, event_id, name, activityTime, duration, user_name, user_mobile]
+                "INSERT INTO events (meeting_id, event_id, name, time, duration, user_name, user_mobile, meta) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                [meetingPk, event_id, name, activityTime, duration, user_name, user_mobile, JSON.stringify(metaJson)]
             );
             await client.query(
                 `UPDATE meetings SET analytics = jsonb_set(
