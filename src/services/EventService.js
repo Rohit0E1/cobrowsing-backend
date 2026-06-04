@@ -24,12 +24,31 @@ const EventService = {
     },
 
     /** Activity log for a single meeting — paginated */
-    async getActivity(meetingPk) {
-        const res = await pool.query(
-            "SELECT * FROM events WHERE meeting_id = $1 ORDER BY time DESC LIMIT 200",
+    async getActivity(meetingPk, page = 1) {
+        const pageSize = 15;
+        const currentPage = Math.max(1, parseInt(page, 10) || 1);
+        const offset = (currentPage - 1) * pageSize;
+
+        const countRes = await pool.query(
+            "SELECT COUNT(*) FROM events WHERE meeting_id = $1",
             [meetingPk]
         );
-        return res.rows;
+        const total = parseInt(countRes.rows[0].count, 10);
+
+        const res = await pool.query(
+            "SELECT * FROM events WHERE meeting_id = $1 ORDER BY time DESC LIMIT $2 OFFSET $3",
+            [meetingPk, pageSize, offset]
+        );
+
+        return {
+            data: res.rows,
+            pagination: {
+                page: currentPage,
+                pageSize,
+                total,
+                totalPages: Math.ceil(total / pageSize),
+            },
+        };
     },
 
     async getLiveStream() {

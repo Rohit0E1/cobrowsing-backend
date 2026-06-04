@@ -32,7 +32,7 @@ router.get("/:uuid/activity", verifyToken, async (req, res) => {
     try {
         const meeting = await MeetingService.recoverState(req.params.uuid);
         if (!meeting) return res.status(404).json({ error: "Not found" });
-        const events = await EventService.getActivity(meeting.id);
+        const events = await EventService.getActivity(meeting.id, req.query.page);
         res.json(events);
     } catch (err) {
         

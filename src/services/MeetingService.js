@@ -24,7 +24,7 @@ const MeetingService = {
 
     async getWithModerator(uuid) {
         const res = await pool.query(
-            `SELECT m.id, m.uuid, m.start_time, m.duration, m.enablex_room_id, m.notes, u.name AS moderator_name
+            `SELECT m.id, m.uuid, m.start_time, m.duration, m.enablex_room_id, m.notes, m.transcript, u.name AS moderator_name
              FROM meetings m
              LEFT JOIN users u ON m.moderator_id = u.id
              WHERE m.uuid = $1`,
