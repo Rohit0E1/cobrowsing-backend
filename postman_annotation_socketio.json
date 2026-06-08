@@ -1,0 +1,97 @@
+{
+  "info": {
+    "_postman_id": "a7e3c5d1-2b4f-4a8c-9e1d-3f6b8c0a2d40",
+    "name": "Cobrowsing — Annotation (Socket.IO)",
+    "description": "Socket.IO collection for the annotation / whiteboard relay.\n\nThe backend (src/socket/meetingHandler.js) is a PURE PASSTHROUGH relay — it does not store strokes, validate roles, or echo events back to the sender. It rebroadcasts each event to everyone else in the same room.\n\nHOW TO USE\n1. Open the 'Annotation Socket' request. Postman opens a Socket.IO connection to {{socketUrl}}.\n2. Click 'Connect'.\n3. Send 'join-meeting' FIRST — every annotation event is scoped to the joined room (socket.meetingId). Without joining, nothing relays.\n4. Open the request in a SECOND tab and connect again to act as the receiving client (join the same meetingId). The sender does NOT receive its own events, so a second connection is required to observe the relay.\n5. Send 'whiteboard-draw', 'whiteboard-clear', 'moderator-cursor' from one tab; watch them arrive on the other.\n\nAll coordinates are normalized 0-1.\n\nDefault socket URL: ws://localhost:5001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "socketUrl", "value": "ws://localhost:5001", "type": "string", "description": "Socket.IO endpoint. Backend runs on port 5001 (index.js)." },
+    { "key": "meetingId", "value": "demo-room-123", "type": "string", "description": "Room id (uuid). Both tabs must join the same value." }
+  ],
+  "item": [
+    {
+      "name": "Annotation Socket (Socket.IO)",
+      "request": {
+        "url": {
+          "raw": "{{socketUrl}}",
+          "protocol": "ws",
+          "host": ["{{socketUrl}}"]
+        },
+        "method": "GET",
+        "body": {
+          "mode": "raw",
+          "raw": ""
+        },
+        "description": "Socket.IO connection for the annotation/whiteboard relay. Connect, then send 'join-meeting' before any annotation event. Coordinates normalized 0-1."
+      },
+      "protocolProfileBehavior": {
+        "socketIO": true,
+        "socketIOClientVersion": "v4",
+        "socketIOPath": "/socket.io"
+      },
+      "response": [
+        {
+          "name": "0. join-meeting  (send FIRST)",
+          "originalRequest": {
+            "url": { "raw": "{{socketUrl}}" },
+            "method": "GET",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"meetingId\": \"{{meetingId}}\",\n  \"role\": \"moderator\",\n  \"name\": \"Lead Advisor\",\n  \"mobile\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "EVENT: join-meeting\n\nMust be sent first. Joins socket to the room so subsequent events relay. role: 'moderator' | 'participant'."
+          },
+          "header": [],
+          "body": "{\n  \"meetingId\": \"{{meetingId}}\",\n  \"role\": \"moderator\",\n  \"name\": \"Lead Advisor\",\n  \"mobile\": \"\"\n}"
+        },
+        {
+          "name": "1. whiteboard-draw  (one line segment)",
+          "originalRequest": {
+            "url": { "raw": "{{socketUrl}}" },
+            "method": "GET",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"x1\": 0.10,\n  \"y1\": 0.20,\n  \"x2\": 0.45,\n  \"y2\": 0.55,\n  \"color\": \"#EF4444\",\n  \"size\": 12,\n  \"mode\": \"pencil\",\n  \"roomId\": \"{{meetingId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "EVENT: whiteboard-draw\n\nOne line segment. Coords normalized 0-1. mode: 'pencil' | 'eraser' (use size 40 for eraser). Emitted continuously while drawing (~33ms throttle in the client)."
+          },
+          "header": [],
+          "body": "{\n  \"x1\": 0.10,\n  \"y1\": 0.20,\n  \"x2\": 0.45,\n  \"y2\": 0.55,\n  \"color\": \"#EF4444\",\n  \"size\": 12,\n  \"mode\": \"pencil\",\n  \"roomId\": \"{{meetingId}}\"\n}"
+        },
+        {
+          "name": "2. whiteboard-clear  (wipe canvas)",
+          "originalRequest": {
+            "url": { "raw": "{{socketUrl}}" },
+            "method": "GET",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{meetingId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "EVENT: whiteboard-clear\n\nClears the whole canvas for everyone else in the room. Payload optional."
+          },
+          "header": [],
+          "body": "{\n  \"roomId\": \"{{meetingId}}\"\n}"
+        },
+        {
+          "name": "3. moderator-cursor  (live cursor)",
+          "originalRequest": {
+            "url": { "raw": "{{socketUrl}}" },
+            "method": "GET",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"x\": 0.50,\n  \"y\": 0.50,\n  \"name\": \"Lead Advisor\",\n  \"roomId\": \"{{meetingId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "EVENT: moderator-cursor\n\nFigma-style live cursor position. Coords normalized 0-1. Throttle ~50ms in the client."
+          },
+          "header": [],
+          "body": "{\n  \"x\": 0.50,\n  \"y\": 0.50,\n  \"name\": \"Lead Advisor\",\n  \"roomId\": \"{{meetingId}}\"\n}"
+        }
+      ]
+    }
+  ]
+}

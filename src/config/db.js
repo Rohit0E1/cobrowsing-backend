@@ -188,6 +188,32 @@ const initDb = async () => {
             );
 
             CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(LOWER(email));
+
+            CREATE TABLE IF NOT EXISTS client_notes (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                author VARCHAR(255),
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_client_notes_client_id ON client_notes(client_id);
+
+            CREATE TABLE IF NOT EXISTS client_activities (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(255),
+                description TEXT,
+                meta JSONB DEFAULT '{}',
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_client_activities_client_id ON client_activities(client_id);
+            CREATE INDEX IF NOT EXISTS idx_client_activities_created_at ON client_activities(created_at);
         `);
 
         await pool.query(
