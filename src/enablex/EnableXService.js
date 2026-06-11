@@ -28,7 +28,6 @@ class EnableXService {
           duration: 60,
           scheduled: false,
           auto_recording: false,
-          active_talker: false,
         },
         sip: { enabled: false },
       };
