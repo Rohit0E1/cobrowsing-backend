@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const NotificationService = require('./NotificationService');
 const CalendarService = require('./CalendarService');
 const MeetingService = require('./MeetingService');
+const ClientService = require('./ClientService');
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -31,14 +32,21 @@ const SchedulingService = {
 
         const end = new Date(start.getTime() + 3600000);
 
+        const { client } = await ClientService.upsertByContact(createdBy, {
+            name: client_name,
+            email: client_email,
+            phone: client_phone,
+            city: client_city
+        });
+
         let meeting;
         try {
             const res = await pool.query(
                 `INSERT INTO scheduled_meetings
-                 (client_name, client_email, client_phone, client_city, project_id, start_time, end_time, status, calendar_event_id, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8, $9)
+                 (client_id, client_name, client_email, client_phone, client_city, project_id, start_time, end_time, status, calendar_event_id, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', $9, $10)
                  RETURNING *`,
-                [client_name, client_email, client_phone || null, client_city || null, project_id || null, start, end, null, createdBy]
+                [client.id, client.name, client.email, client.phone || null, client.city || null, project_id || null, start, end, null, createdBy]
             );
             meeting = res.rows[0];
         } catch (dbErr) {
@@ -51,7 +59,7 @@ const SchedulingService = {
             const roomRow = await MeetingService.create(createdBy, {
                 start_time: start,
                 duration: 3600,
-                meeting_for: client_name
+                meeting_for: meeting.client_name
             });
             uuid = roomRow.uuid;
             roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + uuid;
@@ -67,8 +75,8 @@ const SchedulingService = {
         let calendarEventId = null;
         try {
             calendarEventId = await CalendarService.createEvent(start, {
-                clientName: client_name,
-                clientEmail: client_email,
+                clientName: meeting.client_name,
+                clientEmail: meeting.client_email,
                 salespersonName: salesperson && salesperson.name,
                 salespersonEmail: salesperson && salesperson.email,
                 roomLink,
@@ -88,7 +96,7 @@ const SchedulingService = {
             meeting.room_link = roomLink;
         }
 
-        NotificationService.sendInvite(client_email, client_name, client_phone, start, roomLink, icalUid, salesperson).catch(e =>
+        NotificationService.sendInvite(meeting.client_email, meeting.client_name, meeting.client_phone, start, roomLink, icalUid, salesperson).catch(e =>
             console.error('[SCHEDULE] Notification failed:', e.message)
         );
 

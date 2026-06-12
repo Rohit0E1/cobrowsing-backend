@@ -83,8 +83,8 @@ router.post("/", verifyToken, async (req, res) => {
         const validationError = validateClientBody(req.body);
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const client = await ClientService.create(req.user.id, normalizeBody(req.body));
-        res.status(201).json(client);
+        const { client, reused } = await ClientService.upsertByContact(req.user.id, normalizeBody(req.body));
+        res.status(reused ? 200 : 201).json({ ...client, reused });
     } catch (err) {
         console.error("[CLIENTS] create error:", err);
         res.status(500).json({ error: "Failed to create client" });
@@ -111,6 +111,9 @@ router.put("/:id", verifyToken, async (req, res) => {
         if (!client) return res.status(404).json({ error: "Client not found" });
         res.json(client);
     } catch (err) {
+        if (err.status === 409 || err.code === "23505") {
+            return res.status(409).json({ error: err.message || "A client with this email or phone already exists" });
+        }
         const status = err.message && err.message.includes("Invalid") ? 400 : 500;
         if (status === 500) console.error("[CLIENTS] update error:", err);
         res.status(status).json({ error: err.message || "Failed to update client" });

@@ -187,7 +187,18 @@ const initDb = async () => {
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(LOWER(email));
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_email ON clients(LOWER(email));
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_phone ON clients(phone) WHERE phone IS NOT NULL;
+            DROP INDEX IF EXISTS idx_clients_email;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scheduled_meetings' AND column_name='client_id') THEN
+                    ALTER TABLE scheduled_meetings ADD COLUMN client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_client_id ON scheduled_meetings(client_id);
         `);
 
         await pool.query(

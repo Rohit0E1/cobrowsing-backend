@@ -53,6 +53,9 @@ router.post('/', verifyToken, async (req, res) => {
         });
         res.status(201).json(meeting);
     } catch (err) {
+        if (err.status === 409 || err.code === "23505") {
+            return res.status(409).json({ error: err.message || 'This customer conflicts with an existing client record' });
+        }
         const status = err.message && (err.message.includes('future') || err.message.includes('Invalid')) ? 400 : 500;
         if (status === 400) {
             console.warn('[SCHEDULE] rejected:', err.message);
