@@ -48,30 +48,36 @@ router.post("/token", async (req, res) => {
     const meeting = await MeetingService.getWithModerator(uuid);
     if (!meeting) return res.status(404).json({ error: "Meeting not found." });
 
-    let roomId = meeting.enablex_room_id;
-
-    if (roomId) {
-      const existing = await EnableXService.getRoom(roomId);
-      if (!existing?.room_id) {
-        await MeetingService.clearEnableXRoom(uuid);
-        roomId = null;
-      }
-    }
-
-    if (!roomId) {
+    const ensureRoom = async () => {
       const enxRoom = await EnableXService.createRoom(uuid, "Propley Suite");
       if (!enxRoom?.room_id)
         throw new Error("EnableX returned malformed room data.");
       await MeetingService.updateEnableXRoom(uuid, enxRoom.room_id);
-      roomId = enxRoom.room_id;
+      return enxRoom.room_id;
+    };
+
+    let roomId = meeting.enablex_room_id || (await ensureRoom());
+
+    let token;
+    try {
+      token = await EnableXService.generateToken(
+        roomId,
+        name || "Guest",
+        role || "participant",
+        socketId,
+      );
+    } catch (err) {
+      if (!err.roomMissing) throw err;
+      await MeetingService.clearEnableXRoom(uuid);
+      roomId = await ensureRoom();
+      token = await EnableXService.generateToken(
+        roomId,
+        name || "Guest",
+        role || "participant",
+        socketId,
+      );
     }
 
-    const token = await EnableXService.generateToken(
-      roomId,
-      name || "Guest",
-      role || "participant",
-      socketId,
-    );
     res.json({ token, roomId });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -7,6 +7,7 @@ const APP_KEY = process.env.ENABLEX_APP_KEY;
 const auth = Buffer.from(`${APP_ID}:${APP_KEY}`).toString("base64");
 const axiosInstance = axios.create({
   baseURL: "https://api.enablex.io/video/v2",
+  timeout: 12000,
   headers: {
     Authorization: `Basic ${auth}`,
     "Content-Type": "application/json",
@@ -65,7 +66,13 @@ class EnableXService {
         data: error.response?.data,
         message: error.message,
       });
-      throw new Error("Failed to authenticate with EnableX media gateway.");
+      const data = error.response?.data;
+      const err = new Error("Failed to authenticate with EnableX media gateway.");
+      err.roomMissing =
+        error.response?.status === 404 ||
+        data?.result === 40001 ||
+        /room not found|invalid room id/i.test(data?.error || data?.desc || "");
+      throw err;
     }
   }
 
