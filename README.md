@@ -81,3 +81,5 @@ Open [http://localhost:5001](http://localhost:5001) in your browser.
 - `src/config/db.js`: Database configuration and initialization logic.
 - `public/`: Frontend assets (Dashboard, Moderator, and Participant views).
 - `public/app.js`: Shared WebRTC and conferencing logic.
+ 
+Co author - Rudranarayan Ojha
