@@ -1,6 +1,6 @@
 const { pool } = require("../config/db");
 
-const FUNNEL_STAGES = ["inquiry", "tour", "negotiation", "booking", "sold"];
+const FUNNEL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"];
 
 const DashboardService = {
     async summary() {
@@ -173,7 +173,7 @@ const DashboardService = {
             FROM clients
             GROUP BY deal_stage
         `);
-        for (const stage of ["tour", "negotiation", "booking", "sold"]) {
+        for (const stage of ["vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"]) {
             const row = stageRes.rows.find((r) => r.deal_stage === stage);
             if (row && row.count > 0) {
                 out.push(
