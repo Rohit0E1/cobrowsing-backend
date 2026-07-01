@@ -1,0 +1,15 @@
+$kind: http-request
+name: Create / Reuse Room for Meeting
+url: "{{baseUrl}}/api/v1/enablex/create/{{meetingUuid}}"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "title": "Propley Suite"
+    }
+auth:
+  type: noauth
+order: 1000

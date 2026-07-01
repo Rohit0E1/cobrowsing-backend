@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/transcript"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "transcript": "Full meeting transcript text..."
+    }
+order: 5000

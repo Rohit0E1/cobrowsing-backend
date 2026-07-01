@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/events/{{meetingUuid}}/record"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "type": "slide_view",
+      "slide": "/newSlides/Slide-7.html",
+      "duration_ms": 4200,
+      "meta": {
+        "actor": "participant"
+      }
+    }
+auth:
+  type: noauth
+order: 4000

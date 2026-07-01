@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}"
+method: GET
+auth:
+  type: noauth
+order: 3000

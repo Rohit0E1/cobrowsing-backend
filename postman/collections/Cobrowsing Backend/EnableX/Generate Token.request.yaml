@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/enablex/token"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "uuid": "{{meetingUuid}}",
+      "name": "Jane Doe",
+      "role": "moderator",
+      "socketId": "socket-abc-123"
+    }
+auth:
+  type: noauth
+order: 2000
