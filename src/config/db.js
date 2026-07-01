@@ -182,6 +182,7 @@ const initDb = async () => {
                 lead_source VARCHAR(255),
                 assigned_advisor_id VARCHAR(255),
                 last_meeting VARCHAR(255),
+                deal_price NUMERIC(15, 2),
                 created_by INTEGER REFERENCES users(id),
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -193,6 +194,9 @@ const initDb = async () => {
 
             DO $$
             BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='deal_price') THEN
+                    ALTER TABLE clients ADD COLUMN deal_price NUMERIC(15, 2);
+                END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scheduled_meetings' AND column_name='client_id') THEN
                     ALTER TABLE scheduled_meetings ADD COLUMN client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL;
                 END IF;

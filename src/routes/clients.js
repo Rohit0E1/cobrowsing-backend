@@ -9,7 +9,7 @@ const VALID_DEAL_STAGES = ["inquiry", "tour", "offer", "closed"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validateClientBody(body, { partial = false } = {}) {
-    const { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id } = body;
+    const { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, deal_price } = body;
 
     if (!partial || name !== undefined) {
         if (!name || typeof name !== "string" || !name.trim()) {
@@ -45,6 +45,12 @@ function validateClientBody(body, { partial = false } = {}) {
     if (assigned_advisor_id !== undefined && assigned_advisor_id !== null && (typeof assigned_advisor_id !== "string" || assigned_advisor_id.trim().length > 255)) {
         return "assigned_advisor_id must be a string up to 255 chars";
     }
+    if (deal_price !== undefined && deal_price !== null) {
+        const price = Number(deal_price);
+        if (isNaN(price) || price < 0) {
+            return "deal_price must be a non-negative number";
+        }
+    }
     return null;
 }
 
@@ -61,6 +67,7 @@ function normalizeBody(body, { partial = false } = {}) {
     if (body.lead_source !== undefined) set("lead_source", body.lead_source ? body.lead_source.trim() : null);
     if (body.assigned_advisor_id !== undefined) set("assigned_advisor_id", body.assigned_advisor_id ? body.assigned_advisor_id.trim() : null);
     if (body.last_meeting !== undefined) set("last_meeting", body.last_meeting ? String(body.last_meeting).trim() : null);
+    if (body.deal_price !== undefined) set("deal_price", body.deal_price !== null && body.deal_price !== "" ? Number(body.deal_price) : null);
     return out;
 }
 

@@ -13,7 +13,8 @@ const DashboardService = {
                 (SELECT COUNT(*) FROM meetings WHERE NOT is_active)::int AS completed_meetings,
                 (SELECT COALESCE(SUM((analytics->>'content_engagement')::int), 0)
                    FROM meetings WHERE analytics ? 'content_engagement')::int AS total_engagement,
-                (SELECT COUNT(*) FROM participants WHERE role = 'participant')::int AS total_attendees
+                (SELECT COUNT(*) FROM participants WHERE role = 'participant')::int AS total_attendees,
+                (SELECT COALESCE(SUM(deal_price), 0) FROM clients WHERE deal_stage NOT IN ('closed'))::numeric AS total_deal_value
         `);
         return res.rows[0];
     },

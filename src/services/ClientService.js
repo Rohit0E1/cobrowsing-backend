@@ -59,7 +59,7 @@ const ClientService = {
         return { client: row, field };
     },
 
-    async create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price }) {
         const dup = await this.findDuplicate({ email, phone });
         if (dup) {
             const err = new Error(`A client with this ${dup.field} already exists`);
@@ -69,8 +69,8 @@ const ClientService = {
         }
         const res = await pool.query(
             `INSERT INTO clients
-             (name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             (name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING *`,
             [
                 name,
@@ -82,17 +82,18 @@ const ClientService = {
                 lead_source || null,
                 assigned_advisor_id || null,
                 last_meeting || null,
+                deal_price != null ? deal_price : null,
                 createdBy || null,
             ]
         );
         return res.rows[0];
     },
 
-    async upsertByContact(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async upsertByContact(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price }) {
         const existing = await this.findDuplicate({ email, phone });
         if (existing) return { client: existing.client, reused: true };
         try {
-            const client = await this.create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting });
+            const client = await this.create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price });
             return { client, reused: false };
         } catch (err) {
             if (err.status === 409 || err.code === '23505') {
@@ -103,7 +104,7 @@ const ClientService = {
         }
     },
 
-    async update(id, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async update(id, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price }) {
         const cid = validateId(id);
         if (email !== undefined || phone !== undefined) {
             const dup = await this.findDuplicate({ email, phone, excludeId: cid });
@@ -125,6 +126,7 @@ const ClientService = {
                 lead_source         = COALESCE($8, lead_source),
                 assigned_advisor_id = COALESCE($9, assigned_advisor_id),
                 last_meeting        = COALESCE($10, last_meeting),
+                deal_price          = COALESCE($11, deal_price),
                 updated_at          = NOW()
              WHERE id = $1
              RETURNING *`,
@@ -139,6 +141,7 @@ const ClientService = {
                 lead_source ?? null,
                 assigned_advisor_id ?? null,
                 last_meeting ?? null,
+                deal_price ?? null,
             ]
         );
         return res.rows[0] || null;
