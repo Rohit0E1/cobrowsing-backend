@@ -1,0 +1,8 @@
+# Use this workspace to collaborate
+workspace:
+  id: 3e178ba8-f7dc-45d3-8577-5f293fc49f91
+
+localResources:
+  collections:
+    - ../postman_annotation_socketio.json
+    - ../postman_collection.json

@@ -1,0 +1,9 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/clients'
+auth:
+  type: bearer
+  bearer:
+    - key: token
+      value: '{{token}}'
+order: 1000

@@ -1,14 +1,14 @@
 $kind: collection
-description: "Express + Socket.IO API server (EnableX, scheduling, analytics). Default base URL: http://localhost:5001"
-variables:
-  baseUrl: http://localhost:5001
-  token: ""
-  meetingUuid: ""
-  noteId: ""
-  scheduledId: ""
+name: Cobrowsing Backend
 auth:
-  - id: c9191dc2-07ac-4fcf-a094-3a54460406d2
-    type: bearer
-    name: bearer auth
-    credentials:
-      token: "{{token}}"
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'
+variables:
+  - key: token
+    value: ''
+    description: JWT token — populated automatically by the Login request
+  - key: baseUrl
+    value: 'http://localhost:5001/api/v1'
+    description: Base URL for the Cobrowsing Backend API
