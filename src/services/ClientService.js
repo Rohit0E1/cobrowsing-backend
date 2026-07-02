@@ -1,7 +1,8 @@
 const { pool } = require('../config/db');
+const ClientActivityService = require('./ClientActivityService');
 
 const VALID_STATUSES = ['Active', 'Pending', 'Completed'];
-const VALID_DEAL_STAGES = ['inquiry', 'tour', 'offer', 'closed'];
+const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won'];
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -18,7 +19,21 @@ const ClientService = {
     async getById(id) {
         const cid = validateId(id);
         const res = await pool.query('SELECT * FROM clients WHERE id = $1', [cid]);
-        return res.rows[0] || null;
+        const client = res.rows[0];
+        if (!client) return null;
+
+        const [notesRes, activitiesRes] = await Promise.all([
+            pool.query(
+                'SELECT * FROM client_notes WHERE client_id = $1 ORDER BY created_at DESC, id DESC',
+                [cid]
+            ),
+            pool.query(
+                'SELECT * FROM client_activities WHERE client_id = $1 ORDER BY created_at DESC, id DESC',
+                [cid]
+            ),
+        ]);
+
+        return { ...client, notes: notesRes.rows, activities: activitiesRes.rows };
     },
 
     async findByEmail(email) {
@@ -86,7 +101,15 @@ const ClientService = {
                 createdBy || null,
             ]
         );
-        return res.rows[0];
+        const created = res.rows[0];
+        await ClientActivityService.log(created.id, {
+            type: 'client_created',
+            title: 'Lead created',
+            description: `${created.name} added to pipeline`,
+            meta: { deal_stage: created.deal_stage },
+            createdBy: createdBy || null,
+        });
+        return created;
     },
 
     async upsertByContact(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, deal_price }) {
@@ -144,7 +167,29 @@ const ClientService = {
                 deal_price ?? null,
             ]
         );
-        return res.rows[0] || null;
+        const updated = res.rows[0];
+
+        if (deal_stage != null && deal_stage !== prior.deal_stage) {
+            await ClientActivityService.log(cid, {
+                type: 'stage_changed',
+                title: 'Pipeline stage updated',
+                description: `Stage changed from ${prior.deal_stage} to ${updated.deal_stage}`,
+                meta: { from: prior.deal_stage, to: updated.deal_stage },
+                createdBy: updatedBy,
+            });
+        }
+
+        if (status != null && status !== prior.status) {
+            await ClientActivityService.log(cid, {
+                type: 'status_changed',
+                title: 'Status updated',
+                description: `Status changed from ${prior.status} to ${updated.status}`,
+                meta: { from: prior.status, to: updated.status },
+                createdBy: updatedBy,
+            });
+        }
+
+        return updated;
     },
 
     async remove(id) {

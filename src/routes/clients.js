@@ -1,11 +1,18 @@
 const express = require("express");
 const { verifyToken } = require("../middleware/auth");
 const ClientService = require("../services/ClientService");
+const ClientNoteService = require("../services/ClientNoteService");
+const ClientActivityService = require("../services/ClientActivityService");
 
 const router = express.Router();
 
+function notePreview(body) {
+    const trimmed = String(body).trim();
+    return trimmed.length > 72 ? `${trimmed.slice(0, 72)}…` : trimmed;
+}
+
 const VALID_STATUSES = ["Active", "Pending", "Completed"];
-const VALID_DEAL_STAGES = ["inquiry", "tour", "offer", "closed"];
+const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validateClientBody(body, { partial = false } = {}) {
@@ -37,7 +44,7 @@ function validateClientBody(body, { partial = false } = {}) {
         return "status must be Active, Pending or Completed";
     }
     if (deal_stage !== undefined && deal_stage !== null && !VALID_DEAL_STAGES.includes(deal_stage)) {
-        return "deal_stage must be inquiry, tour, offer or closed";
+        return "deal_stage must be one of: " + VALID_DEAL_STAGES.join(", ");
     }
     if (lead_source !== undefined && lead_source !== null && (typeof lead_source !== "string" || lead_source.trim().length > 255)) {
         return "lead_source must be a string up to 255 chars";
@@ -114,7 +121,7 @@ router.put("/:id", verifyToken, async (req, res) => {
         const validationError = validateClientBody(req.body, { partial: true });
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const client = await ClientService.update(req.params.id, normalizeBody(req.body, { partial: true }));
+        const client = await ClientService.update(req.params.id, normalizeBody(req.body, { partial: true }), req.user.id);
         if (!client) return res.status(404).json({ error: "Client not found" });
         res.json(client);
     } catch (err) {
@@ -136,6 +143,101 @@ router.delete("/:id", verifyToken, async (req, res) => {
         const status = err.message && err.message.includes("Invalid") ? 400 : 500;
         if (status === 500) console.error("[CLIENTS] delete error:", err);
         res.status(status).json({ error: err.message || "Failed to delete client" });
+    }
+});
+
+router.get("/:id/activities", verifyToken, async (req, res) => {
+    try {
+        const activities = await ClientActivityService.listForClient(req.params.id);
+        res.json({ activities });
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] activities error:", err);
+        res.status(status).json({ error: err.message || "Failed to load activities" });
+    }
+});
+
+router.get("/:id/notes", verifyToken, async (req, res) => {
+    try {
+        const notes = await ClientNoteService.listForClient(req.params.id);
+        res.json({ notes });
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] notes list error:", err);
+        res.status(status).json({ error: err.message || "Failed to load notes" });
+    }
+});
+
+router.post("/:id/notes", verifyToken, async (req, res) => {
+    try {
+        const body = req.body && typeof req.body.body === "string" ? req.body.body.trim() : "";
+        if (!body) return res.status(400).json({ error: "note body is required" });
+        if (body.length > 5000) return res.status(400).json({ error: "note too long (max 5000)" });
+
+        const client = await ClientService.getById(req.params.id);
+        if (!client) return res.status(404).json({ error: "Client not found" });
+
+        const author = req.body.author ? String(req.body.author).trim() : (req.user.email || null);
+        const note = await ClientNoteService.create(req.params.id, { body, author, createdBy: req.user.id });
+        await ClientActivityService.log(req.params.id, {
+            type: "note_added",
+            title: "Note added",
+            description: notePreview(body),
+            meta: { note_id: note.id },
+            createdBy: req.user.id,
+        });
+        res.status(201).json(note);
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] note create error:", err);
+        res.status(status).json({ error: err.message || "Failed to create note" });
+    }
+});
+
+router.put("/:id/notes/:noteId", verifyToken, async (req, res) => {
+    try {
+        const hasBody = req.body && req.body.body !== undefined;
+        let body;
+        if (hasBody) {
+            body = typeof req.body.body === "string" ? req.body.body.trim() : "";
+            if (!body) return res.status(400).json({ error: "note body cannot be empty" });
+            if (body.length > 5000) return res.status(400).json({ error: "note too long (max 5000)" });
+        }
+        const author = req.body.author !== undefined ? (req.body.author ? String(req.body.author).trim() : null) : undefined;
+
+        const note = await ClientNoteService.update(req.params.id, req.params.noteId, { body, author });
+        if (!note) return res.status(404).json({ error: "Note not found" });
+        await ClientActivityService.log(req.params.id, {
+            type: "note_updated",
+            title: "Note updated",
+            description: notePreview(note.body),
+            meta: { note_id: note.id },
+            createdBy: req.user.id,
+        });
+        res.json(note);
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] note update error:", err);
+        res.status(status).json({ error: err.message || "Failed to update note" });
+    }
+});
+
+router.delete("/:id/notes/:noteId", verifyToken, async (req, res) => {
+    try {
+        const removed = await ClientNoteService.remove(req.params.id, req.params.noteId);
+        if (!removed) return res.status(404).json({ error: "Note not found" });
+        await ClientActivityService.log(req.params.id, {
+            type: "note_deleted",
+            title: "Note deleted",
+            description: notePreview(removed.body),
+            meta: { note_id: removed.id },
+            createdBy: req.user.id,
+        });
+        res.json({ id: removed.id });
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] note delete error:", err);
+        res.status(status).json({ error: err.message || "Failed to delete note" });
     }
 });
 
