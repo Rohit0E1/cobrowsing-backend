@@ -38,4 +38,37 @@ router.get('/voice', (req, res) => {
     });
 });
 
+router.get('/requirements', (req, res) => {
+    const scriptPath = path.join(__dirname, '../../scripts/test-requirements.js');
+    const child = spawn('node', [scriptPath]);
+
+    let output = '';
+    let errorOutput = '';
+
+    child.stdout.on('data', (data) => {
+        output += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+    });
+
+    child.on('close', (code) => {
+        if (code === 0) {
+            res.status(200).json({
+                success: true,
+                message: 'All requirements and acceptance criteria passed.',
+                output: output
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Requirements/acceptance criteria tests failed.',
+                error: errorOutput || output,
+                code: code
+            });
+        }
+    });
+});
+
 module.exports = router;
