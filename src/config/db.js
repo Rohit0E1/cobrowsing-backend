@@ -179,6 +179,7 @@ const initDb = async () => {
                 city VARCHAR(255),
                 status VARCHAR(50) DEFAULT 'Active',
                 deal_stage VARCHAR(50) DEFAULT 'inquiry',
+                win_loss_reason TEXT,
                 lead_source VARCHAR(255),
                 assigned_advisor_id VARCHAR(255),
                 last_meeting VARCHAR(255),
@@ -186,6 +187,13 @@ const initDb = async () => {
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='win_loss_reason') THEN
+                    ALTER TABLE clients ADD COLUMN win_loss_reason TEXT;
+                END IF;
+            END $$;
 
             CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(LOWER(email));
 

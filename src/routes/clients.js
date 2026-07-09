@@ -12,11 +12,11 @@ function notePreview(body) {
 }
 
 const VALID_STATUSES = ["Active", "Pending", "Completed"];
-const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"];
+const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won", "closed_lost"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validateClientBody(body, { partial = false } = {}) {
-    const { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id } = body;
+    const { name, email, phone, city, status, deal_stage, win_loss_reason, lead_source, assigned_advisor_id } = body;
 
     if (!partial || name !== undefined) {
         if (!name || typeof name !== "string" || !name.trim()) {
@@ -52,6 +52,9 @@ function validateClientBody(body, { partial = false } = {}) {
     if (assigned_advisor_id !== undefined && assigned_advisor_id !== null && (typeof assigned_advisor_id !== "string" || assigned_advisor_id.trim().length > 255)) {
         return "assigned_advisor_id must be a string up to 255 chars";
     }
+    if (win_loss_reason !== undefined && win_loss_reason !== null && (typeof win_loss_reason !== "string" || win_loss_reason.trim().length > 500)) {
+        return "win_loss_reason must be a string up to 500 chars";
+    }
     return null;
 }
 
@@ -68,6 +71,7 @@ function normalizeBody(body, { partial = false } = {}) {
     if (body.lead_source !== undefined) set("lead_source", body.lead_source ? body.lead_source.trim() : null);
     if (body.assigned_advisor_id !== undefined) set("assigned_advisor_id", body.assigned_advisor_id ? body.assigned_advisor_id.trim() : null);
     if (body.last_meeting !== undefined) set("last_meeting", body.last_meeting ? String(body.last_meeting).trim() : null);
+    if (body.win_loss_reason !== undefined) set("win_loss_reason", body.win_loss_reason ? body.win_loss_reason.trim() : null);
     return out;
 }
 

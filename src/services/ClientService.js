@@ -2,7 +2,7 @@ const { pool } = require('../config/db');
 const ClientActivityService = require('./ClientActivityService');
 
 const VALID_STATUSES = ['Active', 'Pending', 'Completed'];
-const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won'];
+const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won', 'closed_lost'];
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -46,11 +46,11 @@ const ClientService = {
         return res.rows[0] || null;
     },
 
-    async create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async create(createdBy, { name, email, phone, city, status, deal_stage, win_loss_reason, lead_source, assigned_advisor_id, last_meeting }) {
         const res = await pool.query(
             `INSERT INTO clients
-             (name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             (name, email, phone, city, status, deal_stage, win_loss_reason, lead_source, assigned_advisor_id, last_meeting, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING *`,
             [
                 name,
@@ -59,6 +59,7 @@ const ClientService = {
                 city || null,
                 VALID_STATUSES.includes(status) ? status : 'Active',
                 VALID_DEAL_STAGES.includes(deal_stage) ? deal_stage : 'inquiry',
+                win_loss_reason || null,
                 lead_source || null,
                 assigned_advisor_id || null,
                 last_meeting || null,
@@ -76,7 +77,7 @@ const ClientService = {
         return created;
     },
 
-    async update(id, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }, updatedBy = null) {
+    async update(id, { name, email, phone, city, status, deal_stage, win_loss_reason, lead_source, assigned_advisor_id, last_meeting }, updatedBy = null) {
         const cid = validateId(id);
 
         const priorRes = await pool.query('SELECT * FROM clients WHERE id = $1', [cid]);
@@ -91,9 +92,10 @@ const ClientService = {
                 city                = COALESCE($5, city),
                 status              = COALESCE($6, status),
                 deal_stage          = COALESCE($7, deal_stage),
-                lead_source         = COALESCE($8, lead_source),
-                assigned_advisor_id = COALESCE($9, assigned_advisor_id),
-                last_meeting        = COALESCE($10, last_meeting),
+                win_loss_reason     = COALESCE($8, win_loss_reason),
+                lead_source         = COALESCE($9, lead_source),
+                assigned_advisor_id = COALESCE($10, assigned_advisor_id),
+                last_meeting        = COALESCE($11, last_meeting),
                 updated_at          = NOW()
              WHERE id = $1
              RETURNING *`,
@@ -105,6 +107,7 @@ const ClientService = {
                 city ?? null,
                 status ?? null,
                 deal_stage ?? null,
+                win_loss_reason ?? null,
                 lead_source ?? null,
                 assigned_advisor_id ?? null,
                 last_meeting ?? null,
@@ -117,7 +120,7 @@ const ClientService = {
                 type: 'stage_changed',
                 title: 'Pipeline stage updated',
                 description: `Stage changed from ${prior.deal_stage} to ${updated.deal_stage}`,
-                meta: { from: prior.deal_stage, to: updated.deal_stage },
+                meta: { from: prior.deal_stage, to: updated.deal_stage, win_loss_reason: updated.win_loss_reason || null },
                 createdBy: updatedBy,
             });
         }
