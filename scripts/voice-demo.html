@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Propley Voice Assistant — Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0f;
+            color: #e4e4e7;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        .header {
+            padding: 24px 32px;
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #a78bfa, #818cf8, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.3px;
+        }
+
+        .header p {
+            font-size: 13px;
+            color: #71717a;
+            margin-top: 4px;
+        }
+
+        .container {
+            flex: 1;
+            width: 100%;
+            max-width: 800px;
+            padding: 0 24px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #52525b;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected { background: #22c55e; box-shadow: 0 0 8px #22c55e44; }
+        .status-dot.listening { background: #3b82f6; box-shadow: 0 0 8px #3b82f644; animation: pulse 1.5s infinite; }
+        .status-dot.processing { background: #f59e0b; box-shadow: 0 0 8px #f59e0b44; animation: pulse 0.8s infinite; }
+        .status-dot.speaking { background: #a78bfa; box-shadow: 0 0 8px #a78bfa44; animation: pulse 1s infinite; }
+        .status-dot.error { background: #ef4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .status-text {
+            font-size: 13px;
+            font-weight: 500;
+            color: #a1a1aa;
+        }
+
+        .conversation {
+            flex: 1;
+            min-height: 300px;
+            max-height: 50vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+        }
+
+        .conversation::-webkit-scrollbar { width: 4px; }
+        .conversation::-webkit-scrollbar-track { background: transparent; }
+        .conversation::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+
+        .msg {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg.ai {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-bottom-left-radius: 4px;
+        }
+
+        .msg.system {
+            align-self: center;
+            font-size: 12px;
+            color: #71717a;
+            background: none;
+            padding: 4px 0;
+        }
+
+        .msg.error {
+            align-self: center;
+            font-size: 12px;
+            color: #f87171;
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.15);
+        }
+
+        .mic-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 20px;
+        }
+
+        .mic-btn {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            box-shadow: 0 4px 24px rgba(99,102,241,0.3);
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .mic-btn:hover { transform: scale(1.05); box-shadow: 0 6px 32px rgba(99,102,241,0.4); }
+        .mic-btn:active { transform: scale(0.95); }
+
+        .mic-btn.active {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+            box-shadow: 0 4px 24px rgba(239,68,68,0.3);
+        }
+
+        .mic-btn.active::after {
+            content: '';
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 2px solid rgba(239,68,68,0.3);
+            animation: ring 1.5s infinite;
+        }
+
+        @keyframes ring {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        .mic-btn svg { width: 28px; height: 28px; fill: white; }
+
+        .mic-label {
+            font-size: 13px;
+            color: #71717a;
+            font-weight: 500;
+        }
+
+        .visualizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            height: 32px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .visualizer.active { opacity: 1; }
+
+        .visualizer .bar {
+            width: 3px;
+            height: 8px;
+            background: #6366f1;
+            border-radius: 2px;
+            animation: barPulse 0.6s ease infinite alternate;
+        }
+
+        .visualizer .bar:nth-child(1) { animation-delay: 0s; }
+        .visualizer .bar:nth-child(2) { animation-delay: 0.1s; }
+        .visualizer .bar:nth-child(3) { animation-delay: 0.2s; }
+        .visualizer .bar:nth-child(4) { animation-delay: 0.3s; }
+        .visualizer .bar:nth-child(5) { animation-delay: 0.4s; }
+
+        @keyframes barPulse {
+            from { height: 6px; }
+            to { height: 24px; }
+        }
+
+        .config {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .config label {
+            color: #71717a;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .config input, .config select {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #e4e4e7;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .footer {
+            padding: 16px;
+            text-align: center;
+            font-size: 11px;
+            color: #3f3f46;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Propley Voice Assistant</h1>
+        <p>Tap the mic once — speak naturally — AI responds with voice</p>
+    </div>
+
+    <div class="container">
+        <div class="status-bar">
+            <div class="status-dot" id="statusDot"></div>
+            <span class="status-text" id="statusText">Disconnected</span>
+        </div>
+
+        <div class="conversation" id="conversation"></div>
+
+        <div class="visualizer" id="visualizer">
+            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+
+        <div class="mic-area">
+            <button class="mic-btn" id="micBtn" disabled>
+                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            </button>
+            <span class="mic-label" id="micLabel">Connecting...</span>
+        </div>
+
+        <div class="config">
+            <label>Server:
+                <input type="text" id="serverUrl" style="width: 180px">
+            </label>
+            <label>Language:
+                <select id="language">
+                    <option value="en-IN">English (IN)</option>
+                    <option value="hi-IN">Hindi</option>
+                    <option value="mr-IN">Marathi</option>
+                    <option value="ta-IN">Tamil</option>
+                    <option value="te-IN">Telugu</option>
+                    <option value="kn-IN">Kannada</option>
+                    <option value="bn-IN">Bengali</option>
+                    <option value="gu-IN">Gujarati</option>
+                </select>
+            </label>
+        </div>
+    </div>
+
+    <div class="footer">Voice Conversation Engine — VAD + Sarvam AI STT/TTS + Gemini</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const conversation = document.getElementById('conversation');
+        const micBtn = document.getElementById('micBtn');
+        const micLabel = document.getElementById('micLabel');
+        const visualizer = document.getElementById('visualizer');
+        const serverUrlInput = document.getElementById('serverUrl');
+        const languageSelect = document.getElementById('language');
+
+        // Auto-detect server URL if served from the backend, otherwise default to localhost:5001
+        serverUrlInput.value = window.location.protocol.startsWith('http') 
+            ? window.location.origin 
+            : 'http://localhost:5001';
+
+        let socket = null;
+        let isActive = false;
+        let mediaStream = null;
+        let audioContext = null;
+        let processor = null;
+        let currentAudio = null;
+
+        function setStatus(state, text) {
+            statusDot.className = 'status-dot ' + state;
+            statusText.textContent = text;
+        }
+
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = 'msg ' + type;
+            div.textContent = text;
+            conversation.appendChild(div);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        function connect() {
+            const url = serverUrlInput.value.trim();
+            socket = io(url, { transports: ['websocket'], reconnection: true });
+
+            socket.on('connect_error', (err) => {
+                setStatus('error', 'Connection Error: ' + err.message);
+                console.error('Socket connect error:', err);
+            });
+
+            socket.on('connect', () => {
+                setStatus('connected', 'Connected — tap mic to start');
+                micBtn.disabled = false;
+                micLabel.textContent = 'Tap to start conversation';
+            });
+
+            socket.on('disconnect', () => {
+                setStatus('', 'Disconnected');
+                micBtn.disabled = true;
+                stopConversation();
+            });
+
+            socket.on('voice:listening', () => {
+                setStatus('listening', 'Listening...');
+                visualizer.classList.add('active');
+            });
+
+            socket.on('voice:processing', () => {
+                setStatus('processing', 'Processing your speech...');
+                visualizer.classList.remove('active');
+            });
+
+            socket.on('voice:transcript', (data) => {
+                addMessage(data.text, 'user');
+            });
+
+            socket.on('voice:ai-text', (data) => {
+                addMessage(data.text, 'ai');
+            });
+
+            socket.on('voice:tts-audio', (data) => {
+                setStatus('speaking', 'Speaking...');
+                playAudio(data.audio, data.format);
+            });
+
+            socket.on('voice:barge-in', () => {
+                stopCurrentAudio();
+                addMessage('⚡ Barge-in — interrupted AI', 'system');
+            });
+
+            socket.on('voice:error', (data) => {
+                addMessage('Error: ' + data.message, 'error');
+                setStatus('error', 'Error — will retry');
+            });
+
+            socket.on('voice:ended', () => {
+                setStatus('connected', 'Connected — tap mic to start');
+                visualizer.classList.remove('active');
+            });
+        }
+
+        async function startConversation() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    }
+                });
+
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(mediaStream);
+
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                processor.onaudioprocess = (e) => {
+                    if (!isActive || !socket?.connected) return;
+
+                    const float32 = e.inputBuffer.getChannelData(0);
+                    const int16 = new Int16Array(float32.length);
+                    for (let i = 0; i < float32.length; i++) {
+                        const s = Math.max(-1, Math.min(1, float32[i]));
+                        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+
+                    const buffer = new Uint8Array(int16.buffer);
+                    const base64 = btoa(String.fromCharCode(...buffer));
+                    socket.emit('voice:audio-chunk', { audio: base64 });
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                isActive = true;
+                socket.emit('voice:start', { language: languageSelect.value });
+
+                micBtn.classList.add('active');
+                micLabel.textContent = 'Tap to stop conversation';
+                addMessage('Conversation started', 'system');
+
+            } catch (err) {
+                addMessage('Mic access denied: ' + err.message, 'error');
+            }
+        }
+
+        function stopConversation() {
+            isActive = false;
+            stopCurrentAudio();
+
+            if (processor) { processor.disconnect(); processor = null; }
+            if (audioContext) { audioContext.close(); audioContext = null; }
+            if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+            if (socket?.connected) socket.emit('voice:stop');
+
+            micBtn.classList.remove('active');
+            micLabel.textContent = 'Tap to start conversation';
+            visualizer.classList.remove('active');
+        }
+
+        const audioQueue = [];
+        let isPlayingQueue = false;
+
+        function playAudio(base64Audio, format) {
+            audioQueue.push({ base64Audio, format });
+            if (!isPlayingQueue) {
+                processAudioQueue();
+            }
+        }
+
+        async function processAudioQueue() {
+            if (audioQueue.length === 0) {
+                isPlayingQueue = false;
+                currentAudio = null;
+                if (isActive && socket?.connected) {
+                    socket.emit('voice:tts-done');
+                }
+                return;
+            }
+
+            isPlayingQueue = true;
+            const { base64Audio, format } = audioQueue.shift();
+
+            const binary = atob(base64Audio);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+            const mime = format === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+            const blob = new Blob([bytes], { type: mime });
+            const url = URL.createObjectURL(blob);
+
+            currentAudio = new Audio(url);
+            currentAudio.onended = () => {
+                URL.revokeObjectURL(url);
+                processAudioQueue();
+            };
+            try {
+                await currentAudio.play();
+            } catch (e) {
+                console.error("Audio playback failed", e);
+                processAudioQueue(); // skip to next
+            }
+        }
+
+        function stopCurrentAudio() {
+            audioQueue.length = 0; // Clear the queue
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            isPlayingQueue = false;
+        }
+
+        micBtn.addEventListener('click', () => {
+            if (isActive) {
+                stopConversation();
+            } else {
+                startConversation();
+            }
+        });
+
+        connect();
+    </script>
+</body>
+</html>

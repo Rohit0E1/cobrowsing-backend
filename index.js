@@ -12,6 +12,7 @@ const cors = require("cors");
 const { initDb, pool } = require("./src/config/db");
 const meetingHandler = require("./src/socket/meetingHandler");
 const analyticsHandler = require("./src/socket/analyticsHandler");
+const voiceConversationHandler = require("./src/socket/voiceConversationHandler");
 const keepAlive = require("./src/keepAlive");
 
 const authRouter = require("./src/routes/auth");
@@ -45,6 +46,11 @@ app.get('/health', async (req, res) => {
   } catch (err) {
     res.status(500).json({ status: 'db error', error: err.message });
   }
+});
+
+app.get('/voice-demo', (req, res) => {
+  const path = require('node:path');
+  res.sendFile(path.join(__dirname, 'scripts', 'voice-demo.html'));
 });
 
 // API Routes
@@ -90,6 +96,7 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   meetingHandler(io, socket);
   analyticsHandler(io, socket);
+  voiceConversationHandler(io, socket);
 });
 
 const startServer = async () => {
