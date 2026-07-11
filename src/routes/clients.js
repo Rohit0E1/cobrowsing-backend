@@ -5,7 +5,7 @@ const ClientService = require("../services/ClientService");
 const router = express.Router();
 
 const VALID_STATUSES = ["Active", "Pending", "Completed"];
-const VALID_DEAL_STAGES = ["inquiry", "tour", "offer", "closed"];
+const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won", "closed_lost"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validateClientBody(body, { partial = false } = {}) {
@@ -37,7 +37,7 @@ function validateClientBody(body, { partial = false } = {}) {
         return "status must be Active, Pending or Completed";
     }
     if (deal_stage !== undefined && deal_stage !== null && !VALID_DEAL_STAGES.includes(deal_stage)) {
-        return "deal_stage must be inquiry, tour, offer or closed";
+    return `deal_stage must be one of: ${VALID_DEAL_STAGES.join(", ")}`;
     }
     if (lead_source !== undefined && lead_source !== null && (typeof lead_source !== "string" || lead_source.trim().length > 255)) {
         return "lead_source must be a string up to 255 chars";
