@@ -93,6 +93,9 @@ router.post("/", verifyToken, async (req, res) => {
         const { client, reused } = await ClientService.upsertByContact(req.user.id, normalizeBody(req.body));
         res.status(reused ? 200 : 201).json({ ...client, reused });
     } catch (err) {
+        if (err.code === 'DUPLICATE_EMAIL' || err.code === 'DUPLICATE_PHONE' || err.code === '23505') {
+            return res.status(409).json({ error: err.message });
+        }
         console.error("[CLIENTS] create error:", err);
         res.status(500).json({ error: "Failed to create client" });
     }
@@ -118,7 +121,7 @@ router.put("/:id", verifyToken, async (req, res) => {
         if (!client) return res.status(404).json({ error: "Client not found" });
         res.json(client);
     } catch (err) {
-        if (err.status === 409 || err.code === "23505") {
+        if (err.status === 409 || err.code === 'DUPLICATE_EMAIL' || err.code === 'DUPLICATE_PHONE' || err.code === "23505") {
             return res.status(409).json({ error: err.message || "A client with this email or phone already exists" });
         }
         const status = err.message && err.message.includes("Invalid") ? 400 : 500;

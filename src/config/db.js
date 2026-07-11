@@ -265,6 +265,22 @@ const initDb = async () => {
             ]
         );
 
+        // --- Enforce uniqueness on clients email & phone (may warn if existing duplicates exist) ---
+        try {
+            await pool.query(
+                `CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_email_unique ON clients(LOWER(email))`
+            );
+        } catch (e) {
+            console.warn('[DB] Could not create unique index on clients.email — existing duplicates may be present:', e.message);
+        }
+        try {
+            await pool.query(
+                `CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_phone_unique ON clients(phone) WHERE phone IS NOT NULL`
+            );
+        } catch (e) {
+            console.warn('[DB] Could not create unique index on clients.phone — existing duplicates may be present:', e.message);
+        }
+
         console.log("[DB] Database initialized and indexes verified.");
     } catch (err) {
         console.error("[DB] Initialization error:", err);
