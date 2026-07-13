@@ -1,6 +1,35 @@
 const { pool } = require("../config/db");
 
 const FUNNEL_STAGES = ["inquiry", "tour", "negotiation", "booking", "sold"];
+const PRESENTATION_STATUS_ENUM = ["SCHEDULED", "LIVE", "COMPLETED", "CANCELLED"];
+
+function buildPresentationStatusSummary(counts = {}) {
+    const normalized = {
+        SCHEDULED: Number(counts.scheduled || counts.SCHEDULED || 0),
+        LIVE: Number(counts.live || counts.LIVE || 0),
+        COMPLETED: Number(counts.completed || counts.COMPLETED || 0),
+        CANCELLED: Number(counts.cancelled || counts.CANCELLED || 0),
+    };
+
+    const presentation_status_counts = {
+        SCHEDULED: normalized.SCHEDULED,
+        LIVE: normalized.LIVE,
+        COMPLETED: normalized.COMPLETED,
+        CANCELLED: normalized.CANCELLED,
+    };
+
+    const presentation_status_sum = Object.values(presentation_status_counts).reduce((sum, value) => sum + value, 0);
+    const presentation_total = Number(
+        counts.total ?? counts.presentation_total ?? (presentation_status_counts.SCHEDULED + presentation_status_counts.LIVE + presentation_status_counts.COMPLETED)
+    );
+
+    return {
+        presentation_status_counts,
+        presentation_status_enum: PRESENTATION_STATUS_ENUM,
+        presentation_total,
+        presentation_status_sum,
+    };
+}
 
 const DashboardService = {
     async summary(tr = {}) {
@@ -118,6 +147,19 @@ const DashboardService = {
             `,
             params
         );
+
+        const presentationRes = await pool.query(
+            `
+            SELECT
+                COUNT(*) FILTER (WHERE LOWER(status) = 'scheduled')::int AS scheduled,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'live')::int AS live,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'completed')::int AS completed,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'cancelled')::int AS cancelled
+            FROM scheduled_meetings
+            ${tr.from ? "WHERE created_at BETWEEN $1 AND $2" : ""}
+            `,
+            params
+        );
  
 
         const engagementRes = await pool.query(
@@ -148,6 +190,7 @@ const DashboardService = {
 
         return {
             ...totalsRes.rows[0],
+            ...buildPresentationStatusSummary(presentationRes.rows[0]),
             engagement_distribution: engagementRes.rows,
             interaction_distribution: interactionRes.rows,
         };
@@ -283,4 +326,7 @@ const DashboardService = {
     },
 };
 
-module.exports = DashboardService;
+module.exports = {
+    ...DashboardService,
+    buildPresentationStatusSummary,
+};
