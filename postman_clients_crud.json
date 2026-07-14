@@ -1,0 +1,223 @@
+{
+  "info": {
+    "_postman_id": "c9d2f7b3-5e41-4a92-8f0c-1b7d3e6a9c20",
+    "name": "Cobrowsing — Clients, Notes & Activity Timeline",
+    "description": "Customer (client) CRUD, customer-specific notes CRUD, and the persisted activity timeline.\n\nWhat changed vs the base collection:\n- deal_stage enum now matches the frontend pipeline: inquiry, vsv_scheduled, vsv_done, offer, negotiation, closed_won.\n- GET /api/v1/clients/:id now returns the client PLUS `notes` and `activities` (newest first, each timestamped via created_at).\n- Notes have full CRUD under /api/v1/clients/:id/notes.\n- Every meaningful change (create, deal_stage change, status change, note add/update/delete) writes a timestamped row to client_activities, which drives the activity timeline on the customer detail page.\n\nHOW TO USE\n1. Run Auth > Login first — its test script saves the JWT into the {{token}} collection variable.\n2. Run Clients > Create Client — saves {{clientId}}.\n3. Run Notes > Add Note — saves {{noteId}}.\n4. Update the deal stage, then run Get Client By Id to see the stage_changed + note activities in the `activities` array.\n\nBase URL: http://localhost:5001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001", "type": "string" },
+    { "key": "token", "value": "", "type": "string", "description": "JWT from /auth/login; auto-set by the Login request's test script" },
+    { "key": "clientId", "value": "", "type": "string", "description": "Set by Create Client test script" },
+    { "key": "noteId", "value": "", "type": "string", "description": "Set by Add Note test script" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "    console.log('Token saved to collection variable');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"Sup3rSecret!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "List Clients",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients"] },
+            "description": "Returns { clients: [...] }. Pass ?email=foo@bar.com to look up a single client by email."
+          }
+        },
+        {
+          "name": "Create Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('clientId', String(json.id));",
+                  "    console.log('clientId saved:', json.id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aarav Mehta\",\n  \"email\": \"aarav.mehta@example.com\",\n  \"phone\": \"+919812345678\",\n  \"city\": \"Mumbai\",\n  \"status\": \"Active\",\n  \"deal_stage\": \"inquiry\",\n  \"lead_source\": \"Website\",\n  \"assigned_advisor_id\": \"adv-001\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients"] },
+            "description": "Creates a client and logs a `client_created` activity. deal_stage must be one of: inquiry, vsv_scheduled, vsv_done, offer, negotiation, closed_won."
+          }
+        },
+        {
+          "name": "Get Client By Id (with notes + activities)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] },
+            "description": "Returns the client object plus `notes` (newest first) and `activities` (newest first, each with created_at). This is what the customer detail page / activity timeline reads."
+          }
+        },
+        {
+          "name": "Update Client — Deal Stage (logs activity)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deal_stage\": \"vsv_scheduled\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] },
+            "description": "Moving the pipeline stage logs a `stage_changed` activity with meta { from, to }. Run Get Client By Id afterwards to see it in the timeline. Try vsv_done and negotiation too — they now persist (previously rejected)."
+          }
+        },
+        {
+          "name": "Update Client — Status (logs activity)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Completed\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] },
+            "description": "Logs a `status_changed` activity with meta { from, to }."
+          }
+        },
+        {
+          "name": "Delete Client",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] },
+            "description": "Deletes the client. Notes and activities cascade-delete with it (ON DELETE CASCADE)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notes",
+      "item": [
+        {
+          "name": "List Notes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}/notes", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}", "notes"] },
+            "description": "Returns { notes: [...] } for the client, newest first."
+          }
+        },
+        {
+          "name": "Add Note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('noteId', String(json.id));",
+                  "    console.log('noteId saved:', json.id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Initial consultation done. Client interested in 3BHK sea-facing units, budget ~2.5Cr.\",\n  \"author\": \"Jane Doe\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}/notes", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}", "notes"] },
+            "description": "Adds a note (author optional — defaults to the authenticated user's email) and logs a `note_added` activity. Returns the created note with created_at."
+          }
+        },
+        {
+          "name": "Update Note",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Updated: client now wants a 4BHK; arranging a second VSV next week.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}/notes/{{noteId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}", "notes", "{{noteId}}"] },
+            "description": "Edits the note body/author and logs a `note_updated` activity."
+          }
+        },
+        {
+          "name": "Delete Note",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}/notes/{{noteId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}", "notes", "{{noteId}}"] },
+            "description": "Deletes the note and logs a `note_deleted` activity."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Activity Timeline",
+      "item": [
+        {
+          "name": "List Activities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}/activities", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}", "activities"] },
+            "description": "Returns { activities: [...] } newest first. Each row: { id, client_id, type, title, description, meta, created_by, created_at }. Activity types: client_created, stage_changed, status_changed, note_added, note_updated, note_deleted. Also embedded in Get Client By Id."
+          }
+        }
+      ]
+    }
+  ]
+}
