@@ -12,7 +12,7 @@ function notePreview(body) {
 }
 
 const VALID_STATUSES = ["Active", "Pending", "Completed"];
-const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"];
+const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won", "closed_lost"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validateClientBody(body, { partial = false } = {}) {

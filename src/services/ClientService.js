@@ -2,7 +2,7 @@ const { pool } = require('../config/db');
 const ClientActivityService = require('./ClientActivityService');
 
 const VALID_STATUSES = ['Active', 'Pending', 'Completed'];
-const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won'];
+const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won', 'closed_lost'];
 
 function validateId(id) {
     const n = parseInt(id, 10);
