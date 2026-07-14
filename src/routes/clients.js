@@ -14,6 +14,13 @@ function notePreview(body) {
 const VALID_STATUSES = ["Active", "Pending", "Completed"];
 const VALID_DEAL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won", "closed_lost"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidIndianPhone(raw) {
+    const digits = String(raw).replace(/\D/g, "");
+    let core = digits;
+    if (core.length === 12 && core.startsWith("91")) core = core.slice(2);
+    else if (core.length === 11 && core.startsWith("0")) core = core.slice(1);
+    return /^[6-9]\d{9}$/.test(core);
+}
 
 function validateClientBody(body, { partial = false } = {}) {
     const { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id } = body;
@@ -34,8 +41,10 @@ function validateClientBody(body, { partial = false } = {}) {
             return "email is invalid";
         }
     }
-    if (phone !== undefined && phone !== null && String(phone).trim().length > 50) {
-        return "phone too long (max 50)";
+    if (phone !== undefined && phone !== null && String(phone).trim() !== "") {
+        if (!isValidIndianPhone(phone)) {
+            return "phone must be a valid Indian mobile number (10 digits starting with 6-9)";
+        }
     }
     if (city !== undefined && city !== null && (typeof city !== "string" || city.trim().length > 255)) {
         return "city must be a string up to 255 chars";
@@ -61,7 +70,16 @@ function normalizeBody(body, { partial = false } = {}) {
 
     if (!partial || body.name !== undefined) set("name", body.name.trim());
     if (!partial || body.email !== undefined) set("email", body.email.trim().toLowerCase());
-    if (body.phone !== undefined) set("phone", body.phone ? String(body.phone).trim() : null);
+        if (body.phone !== undefined) {
+        if (!body.phone || !String(body.phone).trim()) {
+            set("phone", null);
+        } else {
+            let digits = String(body.phone).replace(/\D/g, "");
+            if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+            else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+            set("phone", digits);
+        }
+    }
     if (body.city !== undefined) set("city", body.city ? body.city.trim() : null);
     if (body.status !== undefined) set("status", body.status);
     if (body.deal_stage !== undefined) set("deal_stage", body.deal_stage);
