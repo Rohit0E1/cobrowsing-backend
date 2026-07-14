@@ -44,8 +44,8 @@ function validateClientBody(body, { partial = false } = {}) {
         return "status must be Active, Pending or Completed";
     }
     if (deal_stage !== undefined && deal_stage !== null && !VALID_DEAL_STAGES.includes(deal_stage)) {
-        return "deal_stage must be one of: " + VALID_DEAL_STAGES.join(", ");
-    }
+    return `deal_stage must be one of: ${VALID_DEAL_STAGES.join(", ")}`;
+       }
     if (lead_source !== undefined && lead_source !== null && (typeof lead_source !== "string" || lead_source.trim().length > 255)) {
         return "lead_source must be a string up to 255 chars";
     }
