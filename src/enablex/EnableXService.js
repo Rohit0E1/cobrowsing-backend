@@ -1,4 +1,5 @@
 const axios = require("axios");
+const https = require("https");
 require("dotenv").config();
 
 const APP_ID = process.env.ENABLEX_APP_ID;
@@ -7,6 +8,7 @@ const APP_KEY = process.env.ENABLEX_APP_KEY;
 const auth = Buffer.from(`${APP_ID}:${APP_KEY}`).toString("base64");
 const axiosInstance = axios.create({
   baseURL: "https://api.enablex.io/video/v2",
+  httpsAgent: new https.Agent({ keepAlive: true }),
   headers: {
     Authorization: `Basic ${auth}`,
     "Content-Type": "application/json",
