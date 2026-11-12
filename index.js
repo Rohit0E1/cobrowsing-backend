@@ -33,6 +33,7 @@ app.use(
     origin: process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(",")
       : "*",
+    maxAge: 600,
   }),
 );
 app.use(express.json());
