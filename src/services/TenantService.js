@@ -9,7 +9,7 @@ const TenantService = {
     async upsert({ slug, name, deck_origin }) {
         const res = await pool.query(
             `INSERT INTO tenants (slug, name, deck_origin) VALUES ($1, $2, $3)
-             ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, deck_origin = EXCLUDED.deck_origin
+             ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, deck_origin = COALESCE(EXCLUDED.deck_origin, tenants.deck_origin)
              RETURNING *`,
             [slug, name, deck_origin || null]
         );

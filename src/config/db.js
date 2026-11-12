@@ -244,7 +244,7 @@ const initDb = async () => {
             BEGIN
                 SELECT id INTO default_tenant FROM tenants WHERE slug = '${DEFAULT_TENANT_SLUG}';
                 FOREACH t IN ARRAY ARRAY['users', 'projects', 'clients', 'meetings', 'scheduled_meetings'] LOOP
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = t AND column_name = 'tenant_id') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = t AND column_name = 'tenant_id') THEN
                         EXECUTE format('ALTER TABLE %I ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)', t);
                         EXECUTE format('UPDATE %I SET tenant_id = $1', t) USING default_tenant;
                         EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET NOT NULL', t);
