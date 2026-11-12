@@ -6,6 +6,8 @@ const ClientActivityService = require("../services/ClientActivityService");
 
 const router = express.Router();
 
+router.use(verifyToken);
+
 function notePreview(body) {
     const trimmed = String(body).trim();
     return trimmed.length > 72 ? `${trimmed.slice(0, 72)}…` : trimmed;
@@ -71,13 +73,26 @@ function normalizeBody(body, { partial = false } = {}) {
     return out;
 }
 
-router.get("/", verifyToken, async (req, res) => {
+router.param("id", async (req, res, next, id) => {
+    try {
+        if (!(await ClientService.belongsTo(req.user.tenantId, id))) {
+            return res.status(404).json({ error: "Client not found" });
+        }
+        next();
+    } catch (err) {
+        const status = err.message && err.message.includes("Invalid") ? 400 : 500;
+        if (status === 500) console.error("[CLIENTS] ownership check error:", err);
+        res.status(status).json({ error: err.message || "Failed to load client" });
+    }
+});
+
+router.get("/", async (req, res) => {
     try {
         if (req.query.email) {
-            const match = await ClientService.findByEmail(req.query.email);
+            const match = await ClientService.findByEmail(req.user.tenantId, req.query.email);
             return res.json({ clients: match ? [match] : [], match: match || null });
         }
-        const clients = await ClientService.getAll();
+        const clients = await ClientService.getAll(req.user.tenantId);
         res.json({ clients });
     } catch (err) {
         console.error("[CLIENTS] getAll error:", err);
@@ -85,12 +100,12 @@ router.get("/", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/", verifyToken, async (req, res) => {
+router.post("/", async (req, res) => {
     try {
         const validationError = validateClientBody(req.body);
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const { client, reused } = await ClientService.upsertByContact(req.user.id, normalizeBody(req.body));
+        const { client, reused } = await ClientService.upsertByContact(req.user.tenantId, req.user.id, normalizeBody(req.body));
         res.status(reused ? 200 : 201).json({ ...client, reused });
     } catch (err) {
         if (err.code === 'DUPLICATE_EMAIL' || err.code === 'DUPLICATE_PHONE' || err.code === '23505') {
@@ -101,7 +116,7 @@ router.post("/", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/:id", verifyToken, async (req, res) => {
+router.get("/:id", async (req, res) => {
     try {
         const client = await ClientService.getById(req.params.id);
         if (!client) return res.status(404).json({ error: "Client not found" });
@@ -112,12 +127,12 @@ router.get("/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.put("/:id", verifyToken, async (req, res) => {
+router.put("/:id", async (req, res) => {
     try {
         const validationError = validateClientBody(req.body, { partial: true });
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const client = await ClientService.update(req.params.id, normalizeBody(req.body, { partial: true }), req.user.id);
+        const client = await ClientService.update(req.user.tenantId, req.params.id, normalizeBody(req.body, { partial: true }), req.user.id);
         if (!client) return res.status(404).json({ error: "Client not found" });
         res.json(client);
     } catch (err) {
@@ -130,7 +145,7 @@ router.put("/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.delete("/:id", verifyToken, async (req, res) => {
+router.delete("/:id", async (req, res) => {
     try {
         const removed = await ClientService.remove(req.params.id);
         if (!removed) return res.status(404).json({ error: "Client not found" });
@@ -142,7 +157,7 @@ router.delete("/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/:id/activities", verifyToken, async (req, res) => {
+router.get("/:id/activities", async (req, res) => {
     try {
         const activities = await ClientActivityService.listForClient(req.params.id);
         res.json({ activities });
@@ -153,7 +168,7 @@ router.get("/:id/activities", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/:id/notes", verifyToken, async (req, res) => {
+router.get("/:id/notes", async (req, res) => {
     try {
         const notes = await ClientNoteService.listForClient(req.params.id);
         res.json({ notes });
@@ -164,7 +179,7 @@ router.get("/:id/notes", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/:id/notes", verifyToken, async (req, res) => {
+router.post("/:id/notes", async (req, res) => {
     try {
         const body = req.body && typeof req.body.body === "string" ? req.body.body.trim() : "";
         if (!body) return res.status(400).json({ error: "note body is required" });
@@ -190,7 +205,7 @@ router.post("/:id/notes", verifyToken, async (req, res) => {
     }
 });
 
-router.put("/:id/notes/:noteId", verifyToken, async (req, res) => {
+router.put("/:id/notes/:noteId", async (req, res) => {
     try {
         const hasBody = req.body && req.body.body !== undefined;
         let body;
@@ -218,7 +233,7 @@ router.put("/:id/notes/:noteId", verifyToken, async (req, res) => {
     }
 });
 
-router.delete("/:id/notes/:noteId", verifyToken, async (req, res) => {
+router.delete("/:id/notes/:noteId", async (req, res) => {
     try {
         const removed = await ClientNoteService.remove(req.params.id, req.params.noteId);
         if (!removed) return res.status(404).json({ error: "Note not found" });

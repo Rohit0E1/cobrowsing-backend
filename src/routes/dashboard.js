@@ -48,22 +48,22 @@ function handle(name, fn) {
     };
 }
 
-router.get("/summary", verifyToken, handle("summary", (_req, tr) => DashboardService.summary(tr)));
-router.get("/funnel", verifyToken, handle("funnel", (_req, tr) => DashboardService.funnel(tr)));
-router.get("/lead-sources", verifyToken, handle("lead-sources", (_req, tr) => DashboardService.leadSources(tr)));
-router.get("/cities", verifyToken, handle("cities", (_req, tr) => DashboardService.cities(tr)));
-router.get("/advisors", verifyToken, handle("advisors", (_req, tr) => DashboardService.advisors(tr)));
-router.get("/meetings", verifyToken, handle("meetings", (_req, tr) => DashboardService.meetings(tr)));
+router.get("/summary", verifyToken, handle("summary", (req, tr) => DashboardService.summary(req.user.tenantId, tr)));
+router.get("/funnel", verifyToken, handle("funnel", (req, tr) => DashboardService.funnel(req.user.tenantId, tr)));
+router.get("/lead-sources", verifyToken, handle("lead-sources", (req, tr) => DashboardService.leadSources(req.user.tenantId, tr)));
+router.get("/cities", verifyToken, handle("cities", (req, tr) => DashboardService.cities(req.user.tenantId, tr)));
+router.get("/advisors", verifyToken, handle("advisors", (req, tr) => DashboardService.advisors(req.user.tenantId, tr)));
+router.get("/meetings", verifyToken, handle("meetings", (req, tr) => DashboardService.meetings(req.user.tenantId, tr)));
 router.get("/activities", verifyToken, async (req, res) => {
     try {
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
         const timeRange = parseTimeRange(req);
-        res.json(await DashboardService.activities(limit, timeRange));
+        res.json(await DashboardService.activities(req.user.tenantId, limit, timeRange));
     } catch (err) {
         console.error("[DASHBOARD] activities error:", err);
         res.status(500).json({ error: "Failed to load activities" });
     }
 });
-router.get("/insights", verifyToken, handle("insights", (_req, tr) => DashboardService.insights(tr)));
+router.get("/insights", verifyToken, handle("insights", (req, tr) => DashboardService.insights(req.user.tenantId, tr)));
 
 module.exports = router;

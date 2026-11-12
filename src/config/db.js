@@ -1,6 +1,8 @@
 const { Pool } = require("pg");
 require("dotenv").config();
 
+const DEFAULT_TENANT_SLUG = "mandake";
+
 const pool = new Pool(
     process.env.DATABASE_URL
         ? {
@@ -187,8 +189,6 @@ const initDb = async () => {
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_email ON clients(LOWER(email));
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_phone ON clients(phone) WHERE phone IS NOT NULL;
             DROP INDEX IF EXISTS idx_clients_email;
 
             DO $$
@@ -225,11 +225,43 @@ const initDb = async () => {
 
             CREATE INDEX IF NOT EXISTS idx_client_activities_client_id ON client_activities(client_id);
             CREATE INDEX IF NOT EXISTS idx_client_activities_created_at ON client_activities(created_at);
+
+            CREATE TABLE IF NOT EXISTS tenants (
+                id SERIAL PRIMARY KEY,
+                slug VARCHAR(64) UNIQUE NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                deck_origin TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            INSERT INTO tenants (slug, name) VALUES ('${DEFAULT_TENANT_SLUG}', 'Mandake Group')
+            ON CONFLICT (slug) DO NOTHING;
+
+            DO $$
+            DECLARE
+                t TEXT;
+                default_tenant INTEGER;
+            BEGIN
+                SELECT id INTO default_tenant FROM tenants WHERE slug = '${DEFAULT_TENANT_SLUG}';
+                FOREACH t IN ARRAY ARRAY['users', 'projects', 'clients', 'meetings', 'scheduled_meetings'] LOOP
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = t AND column_name = 'tenant_id') THEN
+                        EXECUTE format('ALTER TABLE %I ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)', t);
+                        EXECUTE format('UPDATE %I SET tenant_id = $1', t) USING default_tenant;
+                        EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET NOT NULL', t);
+                        EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I(tenant_id)', 'idx_' || t || '_tenant_id', t);
+                    END IF;
+                END LOOP;
+            END $$;
+
+            DROP INDEX IF EXISTS uq_clients_email;
+            DROP INDEX IF EXISTS uq_clients_phone;
+            DROP INDEX IF EXISTS idx_clients_email_unique;
+            DROP INDEX IF EXISTS idx_clients_phone_unique;
         `);
 
         await pool.query(
-            `INSERT INTO projects (name, slides, status)
-             SELECT $1, $2::jsonb, 'active'
+            `INSERT INTO projects (name, slides, status, tenant_id)
+             SELECT $1, $2::jsonb, 'active', (SELECT id FROM tenants WHERE slug = '${DEFAULT_TENANT_SLUG}')
              WHERE NOT EXISTS (SELECT 1 FROM projects)`,
             [
                 "Luxury Portfolio Spotlight",
@@ -265,17 +297,17 @@ const initDb = async () => {
             ]
         );
 
-        // --- Enforce uniqueness on clients email & phone (may warn if existing duplicates exist) ---
+        // --- Enforce per-tenant uniqueness on clients email & phone (may warn if existing duplicates exist) ---
         try {
             await pool.query(
-                `CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_email_unique ON clients(LOWER(email))`
+                `CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_tenant_email ON clients(tenant_id, LOWER(email))`
             );
         } catch (e) {
             console.warn('[DB] Could not create unique index on clients.email — existing duplicates may be present:', e.message);
         }
         try {
             await pool.query(
-                `CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_phone_unique ON clients(phone) WHERE phone IS NOT NULL`
+                `CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_tenant_phone ON clients(tenant_id, phone) WHERE phone IS NOT NULL`
             );
         } catch (e) {
             console.warn('[DB] Could not create unique index on clients.phone — existing duplicates may be present:', e.message);
@@ -288,4 +320,4 @@ const initDb = async () => {
     }
 };
 
-module.exports = { pool, initDb };
+module.exports = { pool, initDb, DEFAULT_TENANT_SLUG };
