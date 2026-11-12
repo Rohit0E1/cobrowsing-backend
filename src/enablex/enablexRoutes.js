@@ -49,12 +49,23 @@ router.post("/token", async (req, res) => {
     if (!meeting) return res.status(404).json({ error: "Meeting not found." });
 
     let roomId = meeting.enablex_room_id;
+    const issueToken = () =>
+      EnableXService.generateToken(
+        roomId,
+        name || "Guest",
+        role || "participant",
+        socketId,
+      );
+    let token = null;
 
     if (roomId) {
-      const existing = await EnableXService.getRoom(roomId);
-      if (!existing?.room_id) {
-        await MeetingService.clearEnableXRoom(uuid);
-        roomId = null;
+      token = await issueToken().catch(() => null);
+      if (!token) {
+        const existing = await EnableXService.getRoom(roomId);
+        if (!existing?.room_id) {
+          await MeetingService.clearEnableXRoom(uuid);
+          roomId = null;
+        }
       }
     }
 
@@ -66,12 +77,7 @@ router.post("/token", async (req, res) => {
       roomId = enxRoom.room_id;
     }
 
-    const token = await EnableXService.generateToken(
-      roomId,
-      name || "Guest",
-      role || "participant",
-      socketId,
-    );
+    if (!token) token = await issueToken();
     res.json({ token, roomId });
   } catch (err) {
     res.status(500).json({ error: err.message });
