@@ -2,7 +2,7 @@ const { pool } = require('../config/db');
 const ClientActivityService = require('./ClientActivityService');
 
 const VALID_STATUSES = ['Active', 'Pending', 'Completed'];
-const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won'];
+const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won', 'closed_lost'];
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -11,9 +11,15 @@ function validateId(id) {
 }
 
 const ClientService = {
-    async getAll() {
-        const res = await pool.query('SELECT * FROM clients ORDER BY id DESC');
+    async getAll(tenantId) {
+        const res = await pool.query('SELECT * FROM clients WHERE tenant_id = $1 ORDER BY id DESC', [tenantId]);
         return res.rows;
+    },
+
+    async belongsTo(tenantId, id) {
+        const cid = validateId(id);
+        const res = await pool.query('SELECT 1 FROM clients WHERE id = $1 AND tenant_id = $2', [cid, tenantId]);
+        return res.rowCount > 0;
     },
 
     async getById(id) {
@@ -36,21 +42,57 @@ const ClientService = {
         return { ...client, notes: notesRes.rows, activities: activitiesRes.rows };
     },
 
-    async findByEmail(email) {
+    async findByEmail(tenantId, email) {
         const target = email ? String(email).trim().toLowerCase() : '';
         if (!target) return null;
         const res = await pool.query(
-            'SELECT * FROM clients WHERE LOWER(email) = $1 ORDER BY id DESC LIMIT 1',
-            [target]
+            'SELECT * FROM clients WHERE tenant_id = $1 AND LOWER(email) = $2 ORDER BY id DESC LIMIT 1',
+            [tenantId, target]
         );
         return res.rows[0] || null;
     },
 
-    async create(createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async findByPhone(phone, excludeId = null) {
+        const target = phone ? String(phone).trim() : '';
+        if (!target) return null;
+        const res = await pool.query(
+            'SELECT * FROM clients WHERE phone = $1 AND ($2::int IS NULL OR id <> $2) ORDER BY id DESC LIMIT 1',
+            [target, excludeId]
+        );
+        return res.rows[0] || null;
+    },
+
+    async findDuplicate(tenantId, { email, phone, excludeId = null }) {
+        const normEmail = email ? String(email).trim().toLowerCase() : '';
+        const normPhone = phone ? String(phone).trim() : '';
+        if (!normEmail && !normPhone) return null;
+        const res = await pool.query(
+            `SELECT * FROM clients
+             WHERE tenant_id = $4
+               AND ($1::int IS NULL OR id <> $1)
+               AND ( ($2 <> '' AND LOWER(email) = $2)
+                  OR ($3 <> '' AND phone = $3) )
+             ORDER BY id DESC LIMIT 1`,
+            [excludeId, normEmail, normPhone, tenantId]
+        );
+        const row = res.rows[0];
+        if (!row) return null;
+        const field = normEmail && row.email && row.email.toLowerCase() === normEmail ? 'email' : 'phone';
+        return { client: row, field };
+    },
+
+    async create(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+        const dup = await this.findDuplicate(tenantId, { email, phone });
+        if (dup) {
+            const err = new Error(`A client with this ${dup.field} already exists`);
+            err.status = 409;
+            err.field = dup.field;
+            throw err;
+        }
         const res = await pool.query(
             `INSERT INTO clients
-             (name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             (name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting, created_by, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING *`,
             [
                 name,
@@ -63,6 +105,7 @@ const ClientService = {
                 assigned_advisor_id || null,
                 last_meeting || null,
                 createdBy || null,
+                tenantId,
             ]
         );
         const created = res.rows[0];
@@ -76,12 +119,37 @@ const ClientService = {
         return created;
     },
 
-    async update(id, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }, updatedBy = null) {
+    async upsertByContact(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+        const existing = await this.findDuplicate(tenantId, { email, phone });
+        if (existing) return { client: existing.client, reused: true };
+        try {
+            const client = await this.create(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting });
+            return { client, reused: false };
+        } catch (err) {
+            if (err.status === 409 || err.code === '23505') {
+                const raced = await this.findDuplicate(tenantId, { email, phone });
+                if (raced) return { client: raced.client, reused: true };
+            }
+            throw err;
+        }
+    },
+
+    async update(tenantId, id, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }, updatedBy = null) {
         const cid = validateId(id);
 
-        const priorRes = await pool.query('SELECT * FROM clients WHERE id = $1', [cid]);
+        const priorRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND tenant_id = $2', [cid, tenantId]);
         const prior = priorRes.rows[0];
         if (!prior) return null;
+
+        if (email !== undefined || phone !== undefined) {
+            const dup = await this.findDuplicate(tenantId, { email, phone, excludeId: cid });
+            if (dup) {
+                const err = new Error(`A client with this ${dup.field} already exists`);
+                err.status = 409;
+                err.field = dup.field;
+                throw err;
+            }
+        }
 
         const res = await pool.query(
             `UPDATE clients SET

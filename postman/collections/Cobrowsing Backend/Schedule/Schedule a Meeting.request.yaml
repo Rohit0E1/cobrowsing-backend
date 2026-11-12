@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/schedule"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "client_name": "John Smith",
+      "client_email": "john@example.com",
+      "client_phone": "+15555550101",
+      "start_time": "2026-06-01T15:00:00.000Z"
+    }
+order: 2000

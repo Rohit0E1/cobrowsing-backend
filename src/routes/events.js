@@ -2,13 +2,14 @@ const express = require("express");
 const { verifyToken } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
 const EventService = require("../services/EventService");
+const { requireTenantMeeting } = require("../middleware/meetingAccess");
 
 const router = express.Router();
 
 // Dashboard Stats
-router.get("/stats", verifyToken, async (_req, res) => {
+router.get("/stats", verifyToken, async (req, res) => {
     try {
-        const stats = await EventService.getStats();
+        const stats = await EventService.getStats(req.user.tenantId);
         res.json(stats);
     } catch (err) {
         
@@ -17,9 +18,9 @@ router.get("/stats", verifyToken, async (_req, res) => {
 });
 
 // Real-time Activity Stream
-router.get("/live-stream", verifyToken, async (_req, res) => {
+router.get("/live-stream", verifyToken, async (req, res) => {
     try {
-        const events = await EventService.getLiveStream();
+        const events = await EventService.getLiveStream(req.user.tenantId);
         res.json(events);
     } catch (err) {
         
@@ -28,11 +29,9 @@ router.get("/live-stream", verifyToken, async (_req, res) => {
 });
 
 // Meeting-Specific Activity Log
-router.get("/:uuid/activity", verifyToken, async (req, res) => {
+router.get("/:uuid/activity", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
-        const meeting = await MeetingService.recoverState(req.params.uuid);
-        if (!meeting) return res.status(404).json({ error: "Not found" });
-        const events = await EventService.getActivity(meeting.id, req.query.page);
+        const events = await EventService.getActivity(req.meeting.id, req.query.page);
         res.json(events);
     } catch (err) {
         

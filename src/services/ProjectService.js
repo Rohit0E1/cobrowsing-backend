@@ -9,33 +9,34 @@ function validateId(id) {
 }
 
 const ProjectService = {
-    async getAll() {
-        const res = await pool.query('SELECT * FROM projects ORDER BY id DESC');
+    async getAll(tenantId) {
+        const res = await pool.query('SELECT * FROM projects WHERE tenant_id = $1 ORDER BY id DESC', [tenantId]);
         return res.rows;
     },
 
-    async getById(id) {
+    async getById(tenantId, id) {
         const pid = validateId(id);
-        const res = await pool.query('SELECT * FROM projects WHERE id = $1', [pid]);
+        const res = await pool.query('SELECT * FROM projects WHERE id = $1 AND tenant_id = $2', [pid, tenantId]);
         return res.rows[0] || null;
     },
 
-    async create({ name, slides, city, status }) {
+    async create(tenantId, { name, slides, city, status }) {
         const res = await pool.query(
-            `INSERT INTO projects (name, slides, city, status)
-             VALUES ($1, $2::jsonb, $3, $4)
+            `INSERT INTO projects (name, slides, city, status, tenant_id)
+             VALUES ($1, $2::jsonb, $3, $4, $5)
              RETURNING *`,
             [
                 name,
                 JSON.stringify(Array.isArray(slides) ? slides : []),
                 city || null,
                 VALID_STATUSES.includes(status) ? status : 'active',
+                tenantId,
             ]
         );
         return res.rows[0];
     },
 
-    async update(id, { name, slides, city, status }) {
+    async update(tenantId, id, { name, slides, city, status }) {
         const pid = validateId(id);
         const res = await pool.query(
             `UPDATE projects SET
@@ -43,7 +44,7 @@ const ProjectService = {
                 slides = COALESCE($3::jsonb, slides),
                 city   = COALESCE($4, city),
                 status = COALESCE($5, status)
-             WHERE id = $1
+             WHERE id = $1 AND tenant_id = $6
              RETURNING *`,
             [
                 pid,
@@ -51,14 +52,15 @@ const ProjectService = {
                 slides !== undefined ? JSON.stringify(slides) : null,
                 city ?? null,
                 status ?? null,
+                tenantId,
             ]
         );
         return res.rows[0] || null;
     },
 
-    async remove(id) {
+    async remove(tenantId, id) {
         const pid = validateId(id);
-        const res = await pool.query('DELETE FROM projects WHERE id = $1 RETURNING id', [pid]);
+        const res = await pool.query('DELETE FROM projects WHERE id = $1 AND tenant_id = $2 RETURNING id', [pid, tenantId]);
         return res.rows[0] || null;
     },
 };

@@ -1,30 +1,39 @@
 {
   "info": {
-    "_postman_id": "b4c8f2a0-1d3e-4f8a-9c1b-6a0e2b4c8d10",
-    "name": "Cobrowsing Backend",
-    "description": "Express + Socket.IO API server (EnableX, scheduling, analytics). Default base URL: http://localhost:5001",
+    "name": "Cobrowsing Backend (Propley)",
+    "description": "Express + Socket.IO API server — auth, meetings, events, projects, EnableX, scheduling, copilot, clients, dashboard.\n\nUsage:\n1. Set the `baseUrl` collection variable (default http://localhost:5001).\n2. Run **Auth > Login** — it stores the JWT into the `token` variable automatically.\n3. All protected requests send `Authorization: Bearer {{token}}` via the collection-level auth.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:5001", "type": "string" },
-    { "key": "token", "value": "", "type": "string", "description": "JWT from /auth/login; auto-set by the Login request's test script" },
-    { "key": "meetingUuid", "value": "", "type": "string" },
-    { "key": "noteId", "value": "", "type": "string" },
-    { "key": "scheduledId", "value": "", "type": "string" }
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "uuid", "value": "", "type": "string" },
+    { "key": "projectId", "value": "", "type": "string" },
+    { "key": "clientId", "value": "", "type": "string" },
+    { "key": "scheduleId", "value": "", "type": "string" },
+    { "key": "noteId", "value": "", "type": "string" }
   ],
-  "auth": {
-    "type": "bearer",
-    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
-  },
   "item": [
     {
       "name": "Health",
-      "request": {
-        "method": "GET",
-        "auth": { "type": "noauth" },
-        "header": [],
-        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
-      }
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+            "description": "Pings the DB (SELECT 1). Used by the self-ping keep-alive."
+          }
+        }
+      ]
     },
     {
       "name": "Auth",
@@ -32,14 +41,15 @@
         {
           "name": "Register",
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane@example.com\",\n  \"phone\": \"+15555555555\",\n  \"password\": \"Sup3rSecret!\",\n  \"project_ids\": [\"premium-showcase\"]\n}"
+              "raw": "{\n  \"name\": \"Jane Consultant\",\n  \"email\": \"jane@example.com\",\n  \"phone\": \"+15551234567\",\n  \"password\": \"secret123\",\n  \"project_ids\": []\n}"
             },
-            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "name, email, password required. Returns 409 if email already registered."
           }
         },
         {
@@ -50,39 +60,25 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) {",
-                  "  const json = pm.response.json();",
-                  "  if (json.token) {",
+                  "const json = pm.response.json();",
+                  "if (json && json.token) {",
                   "    pm.collectionVariables.set('token', json.token);",
-                  "    console.log('Token saved to collection variable');",
-                  "  }",
+                  "    console.log('token stored');",
                   "}"
                 ]
               }
             }
           ],
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"Sup3rSecret!\"\n}"
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"secret123\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Projects",
-      "item": [
-        {
-          "name": "List Projects",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] }
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Returns { status, token, user }. Test script stores token into the {{token}} variable."
           }
         }
       ]
@@ -97,46 +93,42 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Demo with Client\",\n  \"project_id\": \"premium-showcase\"\n}"
+              "raw": "{\n  \"start_time\": \"2026-07-15T10:00:00.000Z\",\n  \"duration\": 60,\n  \"meeting_for\": \"Property tour — Jane\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/meetings", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings"] },
+            "description": "Creates a meeting for the authenticated moderator. Returns the meeting row (with generated uuid)."
           }
         },
         {
-          "name": "Get All Meetings (Dashboard)",
+          "name": "Get All Meetings",
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/api/v1/meetings/all", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "all"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/all", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "all"] },
+            "description": "Dashboard list of all meetings."
           }
         },
         {
-          "name": "Get Meeting by UUID",
+          "name": "Get Meeting (Join Metadata)",
           "request": {
-            "method": "GET",
             "auth": { "type": "noauth" },
+            "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}"] },
+            "description": "Public join endpoint (no auth). Returns meeting + moderator metadata."
           }
         },
         {
-          "name": "Moderator Authorization Check",
+          "name": "Moderator Session Check",
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/moderator",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "moderator"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/moderator", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "moderator"] },
+            "description": "Any logged-in user may host any meeting. Returns { status: authorized, meeting }."
           }
         },
         {
-          "name": "Update Transcript",
+          "name": "Save Transcript",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -144,11 +136,7 @@
               "mode": "raw",
               "raw": "{\n  \"transcript\": \"Full meeting transcript text...\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/transcript",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "transcript"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/transcript", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "transcript"] }
           }
         },
         {
@@ -158,13 +146,9 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"Client is interested in 3BHK units.\"\n}"
+              "raw": "{\n  \"note\": \"Client is very interested in the corner unit.\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/notes", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "notes"] }
           }
         },
         {
@@ -176,11 +160,7 @@
               "mode": "raw",
               "raw": "{\n  \"note\": \"Updated note text.\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes/{{noteId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes", "{{noteId}}"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/notes/{{noteId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "notes", "{{noteId}}"] }
           }
         },
         {
@@ -188,29 +168,23 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes/{{noteId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "notes", "{{noteId}}"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/notes/{{noteId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "notes", "{{noteId}}"] }
           }
         },
         {
           "name": "Force Reset Selection",
           "request": {
             "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/reset",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "meetings", "{{meetingUuid}}", "reset"]
-            }
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/api/v1/meetings/{{uuid}}/reset", "host": ["{{baseUrl}}"], "path": ["api", "v1", "meetings", "{{uuid}}", "reset"] },
+            "description": "Clears meeting state and EnableX room binding."
           }
         }
       ]
     },
     {
-      "name": "Events / Analytics",
+      "name": "Events",
       "item": [
         {
           "name": "Dashboard Stats",
@@ -234,27 +208,81 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/events/{{meetingUuid}}/activity",
+              "raw": "{{baseUrl}}/api/v1/events/{{uuid}}/activity?page=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "events", "{{meetingUuid}}", "activity"]
+              "path": ["api", "v1", "events", "{{uuid}}", "activity"],
+              "query": [{ "key": "page", "value": "1" }]
             }
           }
         },
         {
           "name": "Record Behavioral Event",
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"slide_view\",\n  \"slide\": \"/newSlides/Slide-7.html\",\n  \"duration_ms\": 4200,\n  \"meta\": {\n    \"actor\": \"participant\"\n  }\n}"
+              "raw": "{\n  \"event_id\": \"slide_view\",\n  \"name\": \"Viewed slide 3\",\n  \"time\": \"2026-07-11T12:00:00.000Z\",\n  \"duration\": 12,\n  \"user_name\": \"Jane\",\n  \"user_mobile\": \"+15551234567\",\n  \"meta\": { \"slide\": 3 }\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/events/{{meetingUuid}}/record",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "events", "{{meetingUuid}}", "record"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/events/{{uuid}}/record", "host": ["{{baseUrl}}"], "path": ["api", "v1", "events", "{{uuid}}", "record"] },
+            "description": "No auth — called from the client-side cobrowsing widget."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] },
+            "description": "Returns { projects, roles } — roles are the requesting user's project_ids."
+          }
+        },
+        {
+          "name": "Create Project",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Skyline Towers\",\n  \"city\": \"Mumbai\",\n  \"status\": \"active\",\n  \"slides\": []\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] },
+            "description": "status must be 'active' or 'archived'. slides must be an array."
+          }
+        },
+        {
+          "name": "Get Project",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/projects/{{projectId}}", "host": ["{{baseUrl}}"], "path": ["projects", "{{projectId}}"] }
+          }
+        },
+        {
+          "name": "Update Project",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Skyline Towers Phase 2\",\n  \"status\": \"archived\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/projects/{{projectId}}", "host": ["{{baseUrl}}"], "path": ["projects", "{{projectId}}"] },
+            "description": "Partial update — only supplied fields change."
+          }
+        },
+        {
+          "name": "Delete Project",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/projects/{{projectId}}", "host": ["{{baseUrl}}"], "path": ["projects", "{{projectId}}"] }
           }
         }
       ]
@@ -263,46 +291,45 @@
       "name": "EnableX",
       "item": [
         {
-          "name": "Create / Reuse Room for Meeting",
+          "name": "Create Room",
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"Propley Suite\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/enablex/create/{{meetingUuid}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "enablex", "create", "{{meetingUuid}}"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/enablex/create/{{uuid}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "create", "{{uuid}}"] },
+            "description": "Creates (or reuses) an EnableX room bound to the internal meeting uuid."
           }
         },
         {
           "name": "Generate Token",
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"uuid\": \"{{meetingUuid}}\",\n  \"name\": \"Jane Doe\",\n  \"role\": \"moderator\",\n  \"socketId\": \"socket-abc-123\"\n}"
+              "raw": "{\n  \"uuid\": \"{{uuid}}\",\n  \"name\": \"Jane\",\n  \"role\": \"moderator\",\n  \"socketId\": \"\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/enablex/token", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "token"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/enablex/token", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "token"] },
+            "description": "role: 'moderator' | 'participant'. Auto-creates the room if missing."
           }
         },
         {
-          "name": "Test Provision (room + 2 tokens)",
+          "name": "Test Provision",
           "request": {
-            "method": "POST",
             "auth": { "type": "noauth" },
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"TestUser\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/enablex/test/provision", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "test", "provision"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/enablex/test/provision", "host": ["{{baseUrl}}"], "path": ["api", "v1", "enablex", "test", "provision"] },
+            "description": "Provisions a throwaway room with a moderator + participant token for testing."
           }
         }
       ]
@@ -315,60 +342,202 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] },
+            "description": "Scoped to the requesting user."
           }
         },
         {
-          "name": "Schedule a Meeting",
+          "name": "Schedule Meeting",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"client_name\": \"John Smith\",\n  \"client_email\": \"john@example.com\",\n  \"client_phone\": \"+15555550101\",\n  \"start_time\": \"2026-06-01T15:00:00.000Z\"\n}"
+              "raw": "{\n  \"client_name\": \"Robert Client\",\n  \"client_email\": \"robert@example.com\",\n  \"client_phone\": \"+15559876543\",\n  \"client_city\": \"Pune\",\n  \"project_id\": 1,\n  \"start_time\": \"2026-07-20T09:00:00.000Z\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] }
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule"] },
+            "description": "client_name, client_email, start_time required. start_time must be in the future. 409 on client conflict."
           }
         },
         {
-          "name": "Get Scheduled Meeting by ID",
+          "name": "Lookup Customer",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}",
+              "raw": "{{baseUrl}}/api/v1/schedule/customers/lookup?email=robert@example.com",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "schedule", "{{scheduledId}}"]
-            }
+              "path": ["api", "v1", "schedule", "customers", "lookup"],
+              "query": [
+                { "key": "email", "value": "robert@example.com" },
+                { "key": "phone", "value": "+15559876543", "disabled": true }
+              ]
+            },
+            "description": "Provide email or phone. Returns { match }."
           }
         },
         {
-          "name": "Reschedule",
+          "name": "Get Scheduled Meeting",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule/{{scheduleId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule", "{{scheduleId}}"] }
+          }
+        },
+        {
+          "name": "Reschedule Meeting",
           "request": {
             "method": "PUT",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"start_time\": \"2026-06-02T16:30:00.000Z\"\n}"
+              "raw": "{\n  \"start_time\": \"2026-07-21T11:00:00.000Z\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}/reschedule",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "schedule", "{{scheduledId}}", "reschedule"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule/{{scheduleId}}/reschedule", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule", "{{scheduleId}}", "reschedule"] }
           }
         },
         {
-          "name": "Cancel",
+          "name": "Cancel Meeting",
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/schedule/{{scheduledId}}/cancel",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "schedule", "{{scheduledId}}", "cancel"]
-            }
+            "url": { "raw": "{{baseUrl}}/api/v1/schedule/{{scheduleId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "v1", "schedule", "{{scheduleId}}", "cancel"] }
           }
+        }
+      ]
+    },
+    {
+      "name": "Copilot",
+      "item": [
+        {
+          "name": "Chat Turn",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [{ \"text\": \"Schedule a meeting with Robert for next Tuesday.\" }]\n    }\n  ],\n  \"tools\": [\n    {\n      \"functionDeclarations\": [\n        {\n          \"name\": \"schedule_meeting\",\n          \"description\": \"Schedule a client meeting\",\n          \"parameters\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"client_name\": { \"type\": \"string\" },\n              \"start_time\": { \"type\": \"string\" }\n            }\n          }\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/copilot", "host": ["{{baseUrl}}"], "path": ["api", "v1", "copilot"] },
+            "description": "Single turn. messages: [{ role: 'user'|'model'|'function', parts: [...] }]. Returns { parts, finishReason }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "List Clients",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients"] },
+            "description": "Add ?email=x to find a single client by email."
+          }
+        },
+        {
+          "name": "Find Client by Email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/clients?email=robert@example.com",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "clients"],
+              "query": [{ "key": "email", "value": "robert@example.com" }]
+            },
+            "description": "Returns { clients: [match], match }."
+          }
+        },
+        {
+          "name": "Create Client",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Robert Client\",\n  \"email\": \"robert@example.com\",\n  \"phone\": \"+15559876543\",\n  \"city\": \"Pune\",\n  \"status\": \"Active\",\n  \"deal_stage\": \"inquiry\",\n  \"lead_source\": \"Website\",\n  \"assigned_advisor_id\": \"advisor-1\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients"] },
+            "description": "name + email required. status: Active|Pending|Completed. deal_stage: inquiry|tour|offer|closed. Upserts by contact — returns { reused: true } on match (200) or a new client (201)."
+          }
+        },
+        {
+          "name": "Get Client",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] }
+          }
+        },
+        {
+          "name": "Update Client",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deal_stage\": \"tour\",\n  \"status\": \"Pending\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] },
+            "description": "Partial update. 409 if email/phone collides with another client."
+          }
+        },
+        {
+          "name": "Delete Client",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "clients", "{{clientId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Summary",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/summary", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "summary"] } }
+        },
+        {
+          "name": "Funnel",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/funnel", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "funnel"] } }
+        },
+        {
+          "name": "Lead Sources",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/lead-sources", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "lead-sources"] } }
+        },
+        {
+          "name": "Cities",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/cities", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "cities"] } }
+        },
+        {
+          "name": "Advisors",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/advisors", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "advisors"] } }
+        },
+        {
+          "name": "Meeting Analytics",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/meetings", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "meetings"] } }
+        },
+        {
+          "name": "Activities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/activities?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "activities"],
+              "query": [{ "key": "limit", "value": "20" }]
+            },
+            "description": "limit clamped to 1..100 (default 20)."
+          }
+        },
+        {
+          "name": "Insights",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/dashboard/insights", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "insights"] } }
         }
       ]
     }

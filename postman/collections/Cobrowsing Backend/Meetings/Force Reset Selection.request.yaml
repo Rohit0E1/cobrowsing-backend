@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/reset"
+method: POST
+order: 9000

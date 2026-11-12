@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/events/{{meetingUuid}}/activity"
+method: GET
+order: 3000

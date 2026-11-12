@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/meetings/{{meetingUuid}}/notes/{{noteId}}"
+method: DELETE
+order: 8000

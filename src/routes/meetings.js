@@ -1,13 +1,14 @@
 const express = require("express");
 const { verifyToken } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
+const { requireTenantMeeting } = require("../middleware/meetingAccess");
 
 const router = express.Router();
 
 // Create Meeting
 router.post("/", verifyToken, async (req, res) => {
     try {
-        const meeting = await MeetingService.create(req.user.id, req.body);
+        const meeting = await MeetingService.create(req.user.tenantId, req.user.id, req.body);
         res.json(meeting);
     } catch (err) {
         
@@ -16,9 +17,9 @@ router.post("/", verifyToken, async (req, res) => {
 });
 
 // All Meetings (Dashboard)
-router.get("/all", verifyToken, async (_req, res) => {
+router.get("/all", verifyToken, async (req, res) => {
     try {
-        const meetings = await MeetingService.getAll();
+        const meetings = await MeetingService.getAll(req.user.tenantId);
         res.json(meetings);
     } catch (err) {
         
@@ -38,19 +39,13 @@ router.get("/:uuid", async (req, res) => {
     }
 });
 
-// Moderator Session Check — any logged-in user may host any meeting
-router.get("/:uuid/moderator", verifyToken, async (req, res) => {
-    try {
-        const meeting = await MeetingService.getWithModerator(req.params.uuid);
-        if (!meeting) return res.status(404).json({ error: "Not found" });
-        res.json({ status: "authorized", meeting });
-    } catch (err) {
-        res.status(500).json({ error: "Invalid session" });
-    }
+// Moderator Session Check — any logged-in user in the meeting's tenant may host it
+router.get("/:uuid/moderator", verifyToken, requireTenantMeeting, (req, res) => {
+    res.json({ status: "authorized", meeting: req.meeting });
 });
 
 // Save Meeting Transcript
-router.patch("/:uuid/transcript", verifyToken, async (req, res) => {
+router.patch("/:uuid/transcript", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
         const { transcript } = req.body;
         if (typeof transcript !== "string") return res.status(400).json({ error: "transcript must be a string" });
@@ -63,7 +58,7 @@ router.patch("/:uuid/transcript", verifyToken, async (req, res) => {
 });
 
 // Add Meeting Note
-router.post("/:uuid/notes", verifyToken, async (req, res) => {
+router.post("/:uuid/notes", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
         const { note } = req.body;
         if (typeof note !== "string") return res.status(400).json({ error: "note must be a string" });
@@ -76,7 +71,7 @@ router.post("/:uuid/notes", verifyToken, async (req, res) => {
 });
 
 // Edit Meeting Note
-router.patch("/:uuid/notes/:noteId", verifyToken, async (req, res) => {
+router.patch("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
         const { note } = req.body;
         if (typeof note !== "string") return res.status(400).json({ error: "note must be a string" });
@@ -89,7 +84,7 @@ router.patch("/:uuid/notes/:noteId", verifyToken, async (req, res) => {
 });
 
 // Delete Meeting Note
-router.delete("/:uuid/notes/:noteId", verifyToken, async (req, res) => {
+router.delete("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
         const result = await MeetingService.deleteNote(req.params.uuid, req.params.noteId);
         if (!result) return res.status(404).json({ error: "Not found" });
@@ -100,10 +95,8 @@ router.delete("/:uuid/notes/:noteId", verifyToken, async (req, res) => {
 });
 
 // Force Reset Selection
-router.post("/:uuid/reset", verifyToken, async (req, res) => {
+router.post("/:uuid/reset", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
-        const meeting = await MeetingService.getWithModerator(req.params.uuid);
-        if (!meeting) return res.status(404).json({ error: "Not found" });
         await MeetingService.reset(req.params.uuid);
         res.json({ status: "success" });
     } catch (err) {

@@ -1,7 +1,8 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const UserService = require("../services/UserService");
-
+const TenantService = require("../services/TenantService");
+const { DEFAULT_TENANT_SLUG } = require("../config/db");
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
@@ -10,7 +11,8 @@ router.post("/register", async (req, res) => {
         return res.status(400).json({ status: "error", message: "Name, email, and password are required" });
     }
     try {
-        const user = await UserService.register({ name, email, phone, password, project_ids });
+        const tenant = await TenantService.getBySlug(DEFAULT_TENANT_SLUG);
+        const user = await UserService.register(tenant.id, { name, email, phone, password, project_ids });
         res.status(201).json({ status: "success", data: user });
     } catch (err) {
         if (err.code === "23505") {
@@ -32,7 +34,7 @@ router.post("/login", async (req, res) => {
         const match = await UserService.verifyPassword(password, user.password_hash);
         if (!match) return res.status(401).json({ status: "error", message: "Invalid email or password" });
 
-        const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "10h" });
+        const token = jwt.sign({ id: user.id, email: user.email, tenant_id: user.tenant_id }, process.env.JWT_SECRET, { expiresIn: "10h" });
         const { password_hash, ...safeUser } = user;
         res.json({ status: "success", token, user: safeUser });
     } catch (err) {
