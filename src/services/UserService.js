@@ -2,17 +2,22 @@ const bcrypt = require("bcrypt");
 const { pool } = require("../config/db");
 
 const UserService = {
-    async register({ name, email, phone, password, project_ids }) {
+    async register(tenantId, { name, email, phone, password, project_ids }) {
         const hash = await bcrypt.hash(password, 10);
         const res = await pool.query(
-            "INSERT INTO users (name, email, phone, password_hash, project_ids) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, phone, project_ids",
-            [name, email, phone, hash, project_ids || {}]
+            "INSERT INTO users (name, email, phone, password_hash, project_ids, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, phone, project_ids, tenant_id",
+            [name, email, phone, hash, project_ids || {}, tenantId]
         );
         return res.rows[0];
     },
 
     async findByEmail(email) {
-        const res = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        const res = await pool.query(
+            `SELECT u.*, json_build_object('slug', t.slug, 'name', t.name, 'deck_origin', t.deck_origin) AS tenant
+             FROM users u JOIN tenants t ON t.id = u.tenant_id
+             WHERE u.email = $1`,
+            [email]
+        );
         return res.rows[0] || null;
     },
 

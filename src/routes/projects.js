@@ -33,7 +33,7 @@ function validateProjectBody(body, { partial = false } = {}) {
 
 router.get("/", verifyToken, async (req, res) => {
     try {
-        const projects = await ProjectService.getAll();
+        const projects = await ProjectService.getAll(req.user.tenantId);
         const roles = await UserService.getProjectIds(req.user.id);
         res.json({ projects, roles });
     } catch (err) {
@@ -47,7 +47,7 @@ router.post("/", verifyToken, async (req, res) => {
         const validationError = validateProjectBody(req.body);
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const project = await ProjectService.create({
+        const project = await ProjectService.create(req.user.tenantId, {
             name: req.body.name.trim(),
             slides: req.body.slides,
             city: req.body.city ? req.body.city.trim() : null,
@@ -62,7 +62,7 @@ router.post("/", verifyToken, async (req, res) => {
 
 router.get("/:id", verifyToken, async (req, res) => {
     try {
-        const project = await ProjectService.getById(req.params.id);
+        const project = await ProjectService.getById(req.user.tenantId, req.params.id);
         if (!project) return res.status(404).json({ error: "Project not found" });
         res.json(project);
     } catch (err) {
@@ -76,7 +76,7 @@ router.put("/:id", verifyToken, async (req, res) => {
         const validationError = validateProjectBody(req.body, { partial: true });
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const project = await ProjectService.update(req.params.id, {
+        const project = await ProjectService.update(req.user.tenantId, req.params.id, {
             name: req.body.name !== undefined ? req.body.name.trim() : undefined,
             slides: req.body.slides,
             city: req.body.city !== undefined ? (req.body.city ? req.body.city.trim() : null) : undefined,
@@ -93,7 +93,7 @@ router.put("/:id", verifyToken, async (req, res) => {
 
 router.delete("/:id", verifyToken, async (req, res) => {
     try {
-        const removed = await ProjectService.remove(req.params.id);
+        const removed = await ProjectService.remove(req.user.tenantId, req.params.id);
         if (!removed) return res.status(404).json({ error: "Project not found" });
         res.json({ id: removed.id });
     } catch (err) {

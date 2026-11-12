@@ -2,16 +2,17 @@ const { randomBytes } = require("node:crypto");
 const { pool } = require("../config/db");
 
 const MeetingService = {
-    async create(moderatorId, { start_time, duration, meeting_for }) {
+    async create(tenantId, moderatorId, { start_time, duration, meeting_for }) {
         const uuid = randomBytes(4).toString("hex");
         const res = await pool.query(
-            "INSERT INTO meetings (uuid, moderator_id, start_time, duration, meeting_for) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+            "INSERT INTO meetings (uuid, moderator_id, start_time, duration, meeting_for, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
             [
                 uuid,
                 moderatorId,
                 start_time ? new Date(start_time) : new Date(),
                 duration || 5100,
                 meeting_for || "Luxury Advisory",
+                tenantId,
             ]
         );
         return res.rows[0];
@@ -27,18 +28,20 @@ const MeetingService = {
             `SELECT
                 m.*,
                 u.name AS moderator_name,
+                t.deck_origin,
                 COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
              FROM meetings m
+             JOIN tenants t ON t.id = m.tenant_id
              LEFT JOIN users u ON m.moderator_id = u.id
              LEFT JOIN participants p ON p.meeting_id = m.id
              WHERE m.uuid = $1
-             GROUP BY m.id, u.name`,
+             GROUP BY m.id, u.name, t.deck_origin`,
             [uuid]
         );
         return res.rows[0] || null;
     },
 
-    async getAll() {
+    async getAll(tenantId) {
         const res = await pool.query(`
             SELECT
                 m.*,
@@ -47,9 +50,10 @@ const MeetingService = {
             FROM meetings m
             LEFT JOIN users u ON m.moderator_id = u.id
             LEFT JOIN participants p ON p.meeting_id = m.id
+            WHERE m.tenant_id = $1
             GROUP BY m.id, u.name
             ORDER BY m.id DESC
-        `);
+        `, [tenantId]);
         return res.rows;
     },
 

@@ -43,7 +43,7 @@ router.post('/', verifyToken, async (req, res) => {
         if (!start_time) {
             return res.status(400).json({ error: 'start_time is required' });
         }
-        const meeting = await SchedulingService.schedule(req.user.id, {
+        const meeting = await SchedulingService.schedule(req.user.tenantId, req.user.id, {
             client_name: client_name.trim(),
             client_email: client_email.trim().toLowerCase(),
             client_phone: client_phone ? String(client_phone).trim() : null,
@@ -73,7 +73,7 @@ router.get('/customers/lookup', verifyToken, async (req, res) => {
         if (!email && !phone) {
             return res.status(400).json({ error: 'email or phone query param required' });
         }
-        const match = await SchedulingService.lookupCustomer({ email, phone });
+        const match = await SchedulingService.lookupCustomer(req.user.tenantId, { email, phone });
         res.json({ match });
     } catch (err) {
         console.error('[SCHEDULE] lookupCustomer error:', err);

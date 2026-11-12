@@ -3,40 +3,36 @@ const { pool } = require("../config/db");
 const FUNNEL_STAGES = ["inquiry", "vsv_scheduled", "vsv_done", "offer", "negotiation", "closed_won"];
 
 const DashboardService = {
-    async summary(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const clientFilter = tr.from ? "WHERE created_at BETWEEN $1 AND $2" : "";
-        const activeClientFilter = tr.from ? "AND created_at BETWEEN $1 AND $2" : "";
-        const meetingFilter = tr.from ? "WHERE start_time BETWEEN $1 AND $2" : "";
-        const activeMeetingFilter = tr.from ? "AND start_time BETWEEN $1 AND $2" : "";
-        const attendeesFilter = tr.from
-            ? "AND meeting_id IN (SELECT id FROM meetings WHERE start_time BETWEEN $1 AND $2)"
-            : "";
+    async summary(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const clientFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "";
+        const meetingFilter = tr.from ? "AND start_time BETWEEN $2 AND $3" : "";
 
         const res = await pool.query(
             `
             SELECT
-                (SELECT COUNT(*) FROM clients ${clientFilter})::int AS total_clients,
-                (SELECT COUNT(*) FROM clients WHERE status = 'Active' ${activeClientFilter})::int AS active_clients,
-                (SELECT COUNT(*) FROM meetings ${meetingFilter})::int AS total_meetings,
-                (SELECT COUNT(*) FROM meetings WHERE is_active ${activeMeetingFilter})::int AS active_meetings,
-                (SELECT COUNT(*) FROM meetings WHERE NOT is_active ${activeMeetingFilter})::int AS completed_meetings,
+                (SELECT COUNT(*) FROM clients WHERE tenant_id = $1 ${clientFilter})::int AS total_clients,
+                (SELECT COUNT(*) FROM clients WHERE tenant_id = $1 AND status = 'Active' ${clientFilter})::int AS active_clients,
+                (SELECT COUNT(*) FROM meetings WHERE tenant_id = $1 ${meetingFilter})::int AS total_meetings,
+                (SELECT COUNT(*) FROM meetings WHERE tenant_id = $1 AND is_active ${meetingFilter})::int AS active_meetings,
+                (SELECT COUNT(*) FROM meetings WHERE tenant_id = $1 AND NOT is_active ${meetingFilter})::int AS completed_meetings,
                 (SELECT COALESCE(SUM((analytics->>'content_engagement')::int), 0)
-                   FROM meetings WHERE analytics ? 'content_engagement' ${activeMeetingFilter})::int AS total_engagement,
-                (SELECT COUNT(*) FROM participants WHERE role = 'participant' ${attendeesFilter})::int AS total_attendees
+                   FROM meetings WHERE tenant_id = $1 AND analytics ? 'content_engagement' ${meetingFilter})::int AS total_engagement,
+                (SELECT COUNT(*) FROM participants WHERE role = 'participant'
+                   AND meeting_id IN (SELECT id FROM meetings WHERE tenant_id = $1 ${meetingFilter}))::int AS total_attendees
             `,
             params
         );
         return res.rows[0];
     },
 
-    async funnel(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const dateFilter = tr.from ? "WHERE created_at BETWEEN $1 AND $2" : "";
+    async funnel(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const dateFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "";
           const res = await pool.query(
             `SELECT deal_stage, COUNT(*)::int AS count
              FROM clients
-             ${dateFilter}
+             WHERE tenant_id = $1 ${dateFilter}
              GROUP BY deal_stage`,
             params
         );
@@ -47,15 +43,15 @@ const DashboardService = {
         return counts;
     },
 
-    async leadSources(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const dateFilter = tr.from ? "WHERE created_at BETWEEN $1 AND $2" : "";
+    async leadSources(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const dateFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "";
  
         const res = await pool.query(
             `
             SELECT COALESCE(lead_source, 'unknown') AS source, COUNT(*)::int AS count
             FROM clients
-            ${dateFilter}
+            WHERE tenant_id = $1 ${dateFilter}
             GROUP BY lead_source
             ORDER BY count DESC
             `,
@@ -64,15 +60,15 @@ const DashboardService = {
         return res.rows;
     },
 
-    async cities(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const dateFilter = tr.from ? "WHERE created_at BETWEEN $1 AND $2" : "";
+    async cities(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const dateFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "";
  
         const res = await pool.query(
             `
             SELECT COALESCE(city, 'unknown') AS city, COUNT(*)::int AS count
             FROM clients
-            ${dateFilter}
+            WHERE tenant_id = $1 ${dateFilter}
             GROUP BY city
             ORDER BY count DESC
             `,
@@ -81,9 +77,9 @@ const DashboardService = {
         return res.rows;
     },
 
-    async advisors(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const dateFilter = tr.from ? "WHERE m.start_time BETWEEN $1 AND $2" : "";
+    async advisors(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const dateFilter = tr.from ? "AND m.start_time BETWEEN $2 AND $3" : "";
  
         const res = await pool.query(
             `
@@ -94,7 +90,7 @@ const DashboardService = {
                 COALESCE(SUM((m.analytics->>'unique_clients')::int), 0)::int AS clients_reached
             FROM meetings m
             LEFT JOIN users u ON m.moderator_id = u.id
-            ${dateFilter}
+            WHERE m.tenant_id = $1 ${dateFilter}
             GROUP BY u.id, u.name
             ORDER BY meetings DESC, engagement DESC
             `,
@@ -103,9 +99,9 @@ const DashboardService = {
         return res.rows;
     },
 
-    async meetings(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const mFilter = tr.from ? "WHERE start_time BETWEEN $1 AND $2" : "";
+    async meetings(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const mFilter = tr.from ? "AND start_time BETWEEN $2 AND $3" : "";
  
         const totalsRes = await pool.query(
             `
@@ -114,7 +110,7 @@ const DashboardService = {
                 COUNT(*) FILTER (WHERE is_active)::int AS active,
                 COUNT(*) FILTER (WHERE NOT is_active)::int AS completed
             FROM meetings
-            ${mFilter}
+            WHERE tenant_id = $1 ${mFilter}
             `,
             params
         );
@@ -127,8 +123,8 @@ const DashboardService = {
                 m.meeting_for,
                 (m.analytics->>'content_engagement')::int AS engagement
             FROM meetings m
-            WHERE m.analytics ? 'content_engagement'
-              ${tr.from ? "AND m.start_time BETWEEN $1 AND $2" : ""}
+            WHERE m.tenant_id = $1 AND m.analytics ? 'content_engagement'
+              ${tr.from ? "AND m.start_time BETWEEN $2 AND $3" : ""}
             ORDER BY engagement DESC NULLS LAST
             `,
             params
@@ -137,9 +133,9 @@ const DashboardService = {
             `
             SELECT e.meeting_id, COUNT(*)::int AS interactions
             FROM events e
-            ${tr.from ? "JOIN meetings m ON e.meeting_id = m.id" : ""}
-            WHERE e.event_id = 'client_interaction'
-              ${tr.from ? "AND m.start_time BETWEEN $1 AND $2" : ""}
+            JOIN meetings m ON e.meeting_id = m.id
+            WHERE m.tenant_id = $1 AND e.event_id = 'client_interaction'
+              ${tr.from ? "AND m.start_time BETWEEN $2 AND $3" : ""}
             GROUP BY e.meeting_id
             ORDER BY interactions DESC
             `,
@@ -153,17 +149,17 @@ const DashboardService = {
         };
     },
 
-    async activities(limit = 20, tr = {}) {
-        const params = [];
-        let clientF = "";
-        let meetingF = "";
-        let schedF = "";
+    async activities(tenantId, limit = 20, tr = {}) {
+        const params = [tenantId];
+        let clientF = "WHERE tenant_id = $1";
+        let meetingF = "WHERE tenant_id = $1";
+        let schedF = "WHERE tenant_id = $1";
  
         if (tr.from) {
             params.push(tr.from, tr.to);
-            clientF = "WHERE created_at BETWEEN $1 AND $2";
-            meetingF = "WHERE COALESCE(completed_at, start_time) BETWEEN $1 AND $2";
-            schedF = "WHERE created_at BETWEEN $1 AND $2";
+            clientF += " AND created_at BETWEEN $2 AND $3";
+            meetingF += " AND COALESCE(completed_at, start_time) BETWEEN $2 AND $3";
+            schedF += " AND created_at BETWEEN $2 AND $3";
         }
  
         params.push(limit);
@@ -208,11 +204,11 @@ const DashboardService = {
         return res.rows;
     },
 
-    async insights(tr = {}) {
-        const params = tr.from ? [tr.from, tr.to] : [];
-        const clientDateFilter = tr.from ? "AND created_at BETWEEN $1 AND $2" : "";
-        const meetingDateFilter = tr.from ? "AND start_time BETWEEN $1 AND $2" : "";
-        const stageDateFilter = tr.from ? "WHERE created_at BETWEEN $1 AND $2" : "WHERE deal_stage IS NOT NULL";
+    async insights(tenantId, tr = {}) {
+        const params = tr.from ? [tenantId, tr.from, tr.to] : [tenantId];
+        const clientDateFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "";
+        const meetingDateFilter = tr.from ? "AND start_time BETWEEN $2 AND $3" : "";
+        const stageDateFilter = tr.from ? "AND created_at BETWEEN $2 AND $3" : "AND deal_stage IS NOT NULL";
 
         const out = [];
 
@@ -220,7 +216,7 @@ const DashboardService = {
             `
             SELECT lead_source, COUNT(*)::int AS count
             FROM clients
-            WHERE lead_source IS NOT NULL
+            WHERE tenant_id = $1 AND lead_source IS NOT NULL
             ${clientDateFilter}
             GROUP BY lead_source
             ORDER BY count DESC
@@ -233,7 +229,7 @@ const DashboardService = {
             `
             SELECT COUNT(*)::int AS count
             FROM clients
-            WHERE lead_source IS NOT NULL
+            WHERE tenant_id = $1 AND lead_source IS NOT NULL
             ${clientDateFilter}
             `,
             params
@@ -250,7 +246,7 @@ const DashboardService = {
             `
             SELECT id, (analytics->>'content_engagement')::int AS engagement
             FROM meetings
-            WHERE analytics ? 'content_engagement'
+            WHERE tenant_id = $1 AND analytics ? 'content_engagement'
             ${meetingDateFilter}
             ORDER BY engagement DESC NULLS LAST
             LIMIT 1
@@ -265,7 +261,7 @@ const DashboardService = {
             `
             SELECT deal_stage, COUNT(*)::int AS count
             FROM clients
-            ${stageDateFilter}
+            WHERE tenant_id = $1 ${stageDateFilter}
             GROUP BY deal_stage
             `,
             params
