@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const UserService = require("../services/UserService");
 const TenantService = require("../services/TenantService");
 const { DEFAULT_TENANT_SLUG } = require("../config/db");
+const { verifyToken } = require("../middleware/auth");
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
@@ -40,6 +41,31 @@ router.post("/login", async (req, res) => {
     } catch (err) {
         
         res.status(500).json({ status: "error", message: "Login failed" });
+    }
+});
+
+router.get("/tenants", verifyToken, async (req, res) => {
+    try {
+        const tenants = await TenantService.listForUser(req.user.id);
+        res.json({ status: "success", current: req.user.tenantId, tenants });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: "Failed to load tenants" });
+    }
+});
+
+router.post("/switch-tenant", verifyToken, async (req, res) => {
+    const tenantId = Number(req.body?.tenant_id);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+        return res.status(400).json({ status: "error", message: "tenant_id is required" });
+    }
+    try {
+        const tenant = await TenantService.getForMember(req.user.id, tenantId);
+        if (!tenant) return res.status(403).json({ status: "error", message: "You do not have access to this tenant" });
+
+        const token = jwt.sign({ id: req.user.id, email: req.user.email, tenant_id: tenant.id }, process.env.JWT_SECRET, { expiresIn: "10h" });
+        res.json({ status: "success", token, tenant });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: "Failed to switch tenant" });
     }
 });
 

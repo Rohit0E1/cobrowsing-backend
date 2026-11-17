@@ -253,6 +253,15 @@ const initDb = async () => {
                 END LOOP;
             END $$;
 
+            CREATE TABLE IF NOT EXISTS user_tenants (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                PRIMARY KEY (user_id, tenant_id)
+            );
+
+            INSERT INTO user_tenants (user_id, tenant_id) SELECT id, tenant_id FROM users
+            ON CONFLICT DO NOTHING;
+
             DROP INDEX IF EXISTS uq_clients_email;
             DROP INDEX IF EXISTS uq_clients_phone;
             DROP INDEX IF EXISTS idx_clients_email_unique;
