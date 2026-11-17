@@ -5,7 +5,13 @@ const UserService = {
     async register(tenantId, { name, email, phone, password, project_ids }) {
         const hash = await bcrypt.hash(password, 10);
         const res = await pool.query(
-            "INSERT INTO users (name, email, phone, password_hash, project_ids, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, phone, project_ids, tenant_id",
+            `WITH u AS (
+                INSERT INTO users (name, email, phone, password_hash, project_ids, tenant_id) VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id, name, email, phone, project_ids, tenant_id
+             ), m AS (
+                INSERT INTO user_tenants (user_id, tenant_id) SELECT id, tenant_id FROM u
+             )
+             SELECT * FROM u`,
             [name, email, phone, hash, project_ids || {}, tenantId]
         );
         return res.rows[0];
