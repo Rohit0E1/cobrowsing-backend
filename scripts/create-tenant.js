@@ -8,7 +8,9 @@ const ProjectService = require("../src/services/ProjectService");
 const USAGE = `Usage:
   TENANT_ADMIN_PASSWORD=... node scripts/create-tenant.js \\
     --slug tantra --name "Tantra Realty" --deck https://tantra-realty.vercel.app \\
-    [--project "Vale of Dapoli"] [--admin-email a@b.com --admin-name "Jane Doe"]`;
+    [--project "Vale of Dapoli"] [--admin-email a@b.com --admin-name "Jane Doe"]
+
+  An --admin-email that is already registered is given access to the tenant instead.`;
 
 async function main() {
     const { values } = parseArgs({
@@ -28,11 +30,8 @@ async function main() {
     if (values.deck && !/^https:\/\/[^\s/]+$/.test(values.deck.replace(/\/$/, ""))) {
         throw new Error("--deck must be an https origin, e.g. https://tantra-realty.vercel.app");
     }
-    const adminEmail = values["admin-email"];
+    const adminEmail = values["admin-email"]?.trim().toLowerCase();
     const password = process.env.TENANT_ADMIN_PASSWORD;
-    if (adminEmail && (!values["admin-name"] || !password || password.length < 8)) {
-        throw new Error("--admin-email needs --admin-name and TENANT_ADMIN_PASSWORD (min 8 chars)");
-    }
 
     await initDb();
 
@@ -50,11 +49,16 @@ async function main() {
     }
 
     if (adminEmail) {
-        const user = await UserService.register(tenant.id, {
-            name: values["admin-name"],
-            email: adminEmail.trim().toLowerCase(),
-            password,
-        });
+        const existing = await UserService.findByEmail(adminEmail);
+        if (existing) {
+            await TenantService.addMember(existing.id, tenant.id);
+            console.log(`Existing user #${existing.id} ${existing.email} can now switch to ${tenant.slug}`);
+            return;
+        }
+        if (!values["admin-name"] || !password || password.length < 8) {
+            throw new Error("New --admin-email needs --admin-name and TENANT_ADMIN_PASSWORD (min 8 chars)");
+        }
+        const user = await UserService.register(tenant.id, { name: values["admin-name"], email: adminEmail, password });
         console.log(`Admin user #${user.id} ${user.email}`);
     }
 }
