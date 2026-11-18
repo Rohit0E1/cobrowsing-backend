@@ -1,3 +1,4 @@
+const KnowledgeService = require("./KnowledgeService");
 const { randomBytes } = require("node:crypto");
 const { pool } = require("../config/db");
 
@@ -125,6 +126,7 @@ const MeetingService = {
             "UPDATE meetings SET transcript = $1 WHERE uuid = $2 RETURNING uuid, transcript",
             [transcript, uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
     
@@ -137,6 +139,7 @@ const MeetingService = {
              RETURNING uuid, notes`,
             [noteId, noteText, uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 
@@ -154,6 +157,7 @@ const MeetingService = {
             "UPDATE meetings SET notes = $1::jsonb WHERE uuid = $2 RETURNING uuid, notes",
             [JSON.stringify(updatedNotes), uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 
@@ -167,6 +171,7 @@ const MeetingService = {
             "UPDATE meetings SET notes = $1::jsonb WHERE uuid = $2 RETURNING uuid, notes",
             [JSON.stringify(updatedNotes), uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 };

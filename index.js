@@ -24,6 +24,7 @@ const copilotRouter = require("./src/routes/copilot");
 const clientsRouter = require("./src/routes/clients");
 const dashboardRouter = require("./src/routes/dashboard");
 const connectorsRouter = require("./src/routes/connectors");
+const knowledgeRouter = require("./src/routes/knowledge");
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use("/api/v1/copilot", copilotRouter);
 app.use("/api/v1/clients", clientsRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/v1/connectors", connectorsRouter);
+app.use("/api/v1/knowledge", knowledgeRouter);
 
 // Use HTTPS if SSL certs exist (production), fall back to HTTP (local dev with ngrok)
 const sslKeyPath = process.env.SSL_KEY || "./certs/server.key";
