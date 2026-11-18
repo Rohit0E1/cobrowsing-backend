@@ -1,4 +1,5 @@
 const express = require("express");
+const { bearer, canModerate } = require("../middleware/auth");
 const EnableXService = require("./EnableXService");
 const MeetingService = require("../services/MeetingService");
 
@@ -47,6 +48,13 @@ router.post("/token", async (req, res) => {
   try {
     const meeting = await MeetingService.getWithModerator(uuid);
     if (!meeting) return res.status(404).json({ error: "Meeting not found." });
+    // A moderator video token can mute and remove people: only an advisor of this meeting's tenant gets one.
+    if (role === "moderator" && !(await canModerate(bearer(req.headers.authorization), uuid))) {
+      return res.status(403).json({ error: "Sign in again to host this presentation." });
+    }
+    if (meeting.cancelled && role !== "moderator") {
+      return res.status(410).json({ error: "This presentation was cancelled." });
+    }
 
     let roomId = meeting.enablex_room_id;
     const issueToken = () =>

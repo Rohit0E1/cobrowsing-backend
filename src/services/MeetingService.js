@@ -19,6 +19,15 @@ const MeetingService = {
         return res.rows[0];
     },
 
+    /** True when the presentation behind this room was cancelled (clients may no longer join it). */
+    async isCancelled(uuid) {
+        const res = await pool.query(
+            "SELECT 1 FROM scheduled_meetings WHERE meeting_uuid = $1 AND status = 'cancelled' LIMIT 1",
+            [uuid]
+        );
+        return res.rowCount > 0;
+    },
+
     async recoverState(uuid) {
         const res = await pool.query("SELECT id, state FROM meetings WHERE uuid = $1", [uuid]);
         return res.rows[0] || null;
@@ -30,7 +39,10 @@ const MeetingService = {
                 m.*,
                 u.name AS moderator_name,
                 t.deck_origin,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
+                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                EXISTS (
+                    SELECT 1 FROM scheduled_meetings sm WHERE sm.meeting_uuid = m.uuid AND sm.status = 'cancelled'
+                ) AS cancelled
              FROM meetings m
              JOIN tenants t ON t.id = m.tenant_id
              LEFT JOIN users u ON m.moderator_id = u.id

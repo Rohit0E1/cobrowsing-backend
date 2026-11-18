@@ -1,4 +1,5 @@
 const MeetingService = require("../services/MeetingService");
+const { canModerate } = require("../middleware/auth");
 const RoomState = require("../state/RoomState");
 const EnableXService = require("../enablex/EnableXService");
 const AnalyticsService = require("../services/AnalyticsService");
@@ -27,8 +28,21 @@ async function finalizeSession(io, uuid, reason) {
 
 module.exports = (io, socket) => {
 
-    socket.on("join-meeting", async ({ meetingId: uuid, role, name, mobile }) => {
+    socket.on("join-meeting", async ({ meetingId: uuid, role, name, mobile, token }) => {
         if (!uuid) return;
+
+        // The moderator role carries real powers (ending the session, teardown on leave), so it needs the
+        // advisor's login token for this meeting's tenant, as the HTTP moderator check does.
+        if (role === "moderator" && !(await canModerate(token, uuid).catch(() => false))) {
+            socket.emit("moderator-denied", { meetingId: uuid, error: "Sign in again to host this presentation." });
+            return;
+        }
+
+        // A cancelled presentation can't be joined by clients, even with the link.
+        if (role !== "moderator" && (await MeetingService.isCancelled(uuid).catch(() => false))) {
+            socket.emit("meeting-cancelled", { meetingId: uuid });
+            return;
+        }
 
         socket.join(uuid);
         socket.meetingId = uuid;
