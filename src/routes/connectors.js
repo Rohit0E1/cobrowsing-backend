@@ -20,10 +20,16 @@ router.get('/:toolkit', verifyToken, handle((req) => ConnectorService.status(req
 router.post('/:toolkit/connect', verifyToken, handle((req) => ConnectorService.connect(req.user, req.params.toolkit)));
 
 // Run one of the app's tools as the advisor: { tool: "GOOGLECALENDAR_EVENTS_LIST", arguments: {...} }
+// Writes come back as resultType "input_required"; resend with { inputResponses, requestState } once the advisor answers.
 router.post(
     '/:toolkit/execute',
     verifyToken,
-    handle((req) => ConnectorService.execute(req.user, req.params.toolkit, req.body?.tool, req.body?.arguments)),
+    handle((req) =>
+        ConnectorService.execute(req.user, req.params.toolkit, req.body?.tool, req.body?.arguments, {
+            inputResponses: req.body?.inputResponses,
+            requestState: req.body?.requestState,
+        }),
+    ),
 );
 
 module.exports = router;
