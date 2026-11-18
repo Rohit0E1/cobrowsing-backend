@@ -1,6 +1,7 @@
 const { pool } = require('../config/db');
 const NotificationService = require('./NotificationService');
 const CalendarService = require('./CalendarService');
+const AdvisorCalendarService = require('./AdvisorCalendarService');
 const MeetingService = require('./MeetingService');
 const ClientService = require('./ClientService');
 const ProjectService = require('./ProjectService');
@@ -23,6 +24,25 @@ async function getSalesperson(userId) {
 
 function buildIcalUid(uuid) {
     return 'mandake-' + uuid + '@mandake-lighthouse';
+}
+
+/** One retry for a Google call that failed (a blip, an expired token being refreshed). */
+async function withRetry(fn) {
+    try {
+        return await fn();
+    } catch (first) {
+        console.warn('[ADVISOR CALENDAR] retrying after:', first.message);
+        return fn();
+    }
+}
+
+const STALE_INVITE_WARNING =
+    "The client's Google invite still shows the old details: your Google Calendar could not be updated. " +
+    'They were emailed a calendar file instead. Reconnect Google Calendar in the assistant settings.';
+
+function inviteDescription(salesperson, roomLink) {
+    const host = salesperson && salesperson.name ? ' with ' + salesperson.name : '';
+    return 'Your presentation' + host + ', ' + CalendarService.EVENT_TITLE + '.' + (roomLink ? '\n\nJoin: ' + roomLink : '');
 }
 
 const SchedulingService = {
@@ -74,31 +94,53 @@ const SchedulingService = {
         const salesperson = await getSalesperson(createdBy);
         const icalUid = buildIcalUid(uuid);
 
+        // The advisor's own Google Calendar sends the client a real invite; otherwise the service calendar
+        // and the emailed .ics do it.
         let calendarEventId = null;
-        try {
-            calendarEventId = await CalendarService.createEvent(start, {
-                clientName: meeting.client_name,
-                clientEmail: meeting.client_email,
-                salespersonName: salesperson && salesperson.name,
-                salespersonEmail: salesperson && salesperson.email,
-                roomLink,
-                iCalUid: icalUid
-            });
-        } catch (calErr) {
-            console.error('[SCHEDULE] Calendar create failed:', calErr.message);
+        let advisorCalendarId = null;
+        if (await AdvisorCalendarService.isConnected({ id: createdBy })) {
+            try {
+                const invite = await AdvisorCalendarService.createInvite({ id: createdBy }, {
+                    start,
+                    title: CalendarService.EVENT_TITLE,
+                    description: inviteDescription(salesperson, roomLink),
+                    clientEmail: meeting.client_email,
+                    clientName: meeting.client_name
+                });
+                calendarEventId = invite.eventId;
+                advisorCalendarId = invite.calendarId;
+            } catch (advErr) {
+                console.error('[SCHEDULE] Advisor calendar invite failed, using the service calendar:', advErr.message);
+            }
+        }
+
+        if (!advisorCalendarId) {
+            try {
+                calendarEventId = await CalendarService.createEvent(start, {
+                    clientName: meeting.client_name,
+                    clientEmail: meeting.client_email,
+                    salespersonName: salesperson && salesperson.name,
+                    salespersonEmail: salesperson && salesperson.email,
+                    roomLink,
+                    iCalUid: icalUid
+                });
+            } catch (calErr) {
+                console.error('[SCHEDULE] Calendar create failed:', calErr.message);
+            }
         }
 
         if (uuid !== null || calendarEventId !== null) {
             await pool.query(
-                'UPDATE scheduled_meetings SET meeting_uuid = $1, calendar_event_id = $2 WHERE id = $3',
-                [uuid, calendarEventId, meeting.id]
+                'UPDATE scheduled_meetings SET meeting_uuid = $1, calendar_event_id = $2, advisor_calendar_id = $3 WHERE id = $4',
+                [uuid, calendarEventId, advisorCalendarId, meeting.id]
             );
             meeting.meeting_uuid = uuid;
             meeting.calendar_event_id = calendarEventId;
+            meeting.advisor_calendar_id = advisorCalendarId;
             meeting.room_link = roomLink;
         }
 
-        NotificationService.sendInvite(meeting.client_email, meeting.client_name, meeting.client_phone, start, roomLink, icalUid, salesperson).catch(e =>
+        NotificationService.sendInvite(meeting.client_email, meeting.client_name, meeting.client_phone, start, roomLink, icalUid, salesperson, { calendarFile: !advisorCalendarId }).catch(e =>
             console.error('[SCHEDULE] Notification failed:', e.message)
         );
 
@@ -127,14 +169,33 @@ const SchedulingService = {
             ? (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + existingUuid
             : null;
 
+        const salesperson = await getSalesperson(userId);
         let newCalendarId = existing.calendar_event_id;
-        try {
-            newCalendarId = await CalendarService.updateEvent(existing.calendar_event_id, start, {
-                clientName: existing.client_name,
-                roomLink
-            });
-        } catch (calErr) {
-            console.error('[RESCHEDULE] Calendar update failed:', calErr.message);
+        let advisorMoved = false;
+        if (existing.advisor_calendar_id) {
+            try {
+                await withRetry(() => AdvisorCalendarService.moveInvite({ id: userId }, {
+                    calendarId: existing.advisor_calendar_id,
+                    eventId: existing.calendar_event_id,
+                    start,
+                    end,
+                    description: inviteDescription(salesperson, roomLink)
+                }));
+                advisorMoved = true;
+            } catch (advErr) {
+                // The event lives on the advisor's Google account, so nothing else can move it. The client gets an
+                // .ics and is told to drop the old entry; the advisor is told to reconnect (which heals later edits).
+                console.error('[RESCHEDULE] Advisor calendar update failed, emailing an .ics instead:', advErr.message);
+            }
+        } else {
+            try {
+                newCalendarId = await CalendarService.updateEvent(existing.calendar_event_id, start, {
+                    clientName: existing.client_name,
+                    roomLink
+                });
+            } catch (calErr) {
+                console.error('[RESCHEDULE] Calendar update failed:', calErr.message);
+            }
         }
 
         const res = await pool.query(
@@ -149,11 +210,13 @@ const SchedulingService = {
         if (existingUuid) {
             await pool.query('UPDATE meetings SET start_time = $1 WHERE uuid = $2', [start, existingUuid]);
         }
-        const salesperson = await getSalesperson(userId);
         const icalUid = existingUuid ? buildIcalUid(existingUuid) : null;
+        const staleInvite = Boolean(existing.advisor_calendar_id) && !advisorMoved;
         NotificationService.sendReschedule(
-            updated.client_email, updated.client_name, updated.client_phone, start, roomLink, icalUid, salesperson
+            updated.client_email, updated.client_name, updated.client_phone, start, roomLink, icalUid, salesperson,
+            { calendarFile: !advisorMoved, replacesInvite: staleInvite }
         ).catch(e => console.error('[RESCHEDULE] Notification failed:', e.message));
+        if (staleInvite) updated.calendar_warning = STALE_INVITE_WARNING;
 
         return updated;
     },
@@ -169,7 +232,18 @@ const SchedulingService = {
 
         if (existing.status === 'cancelled') throw new Error('Meeting is already cancelled');
 
-        if (existing.calendar_event_id) {
+        let advisorCancelled = false;
+        if (existing.advisor_calendar_id && existing.calendar_event_id) {
+            try {
+                await withRetry(() => AdvisorCalendarService.cancelInvite({ id: userId }, {
+                    calendarId: existing.advisor_calendar_id,
+                    eventId: existing.calendar_event_id
+                }));
+                advisorCancelled = true;
+            } catch (advErr) {
+                console.error('[CANCEL] Advisor calendar cancel failed, emailing an .ics instead:', advErr.message);
+            }
+        } else if (existing.calendar_event_id) {
             CalendarService.deleteEvent(existing.calendar_event_id).catch(e =>
                 console.error('[CANCEL] Calendar delete failed:', e.message)
             );
@@ -190,9 +264,12 @@ const SchedulingService = {
         const updated = res.rows[0];
         const salesperson = await getSalesperson(userId);
         const icalUid = existing.meeting_uuid ? buildIcalUid(existing.meeting_uuid) : null;
+        const staleInvite = Boolean(existing.advisor_calendar_id) && !advisorCancelled;
         NotificationService.sendCancellation(
-            updated.client_email, updated.client_name, updated.client_phone, existing.start_time, icalUid, salesperson
+            updated.client_email, updated.client_name, updated.client_phone, existing.start_time, icalUid, salesperson,
+            { calendarFile: !advisorCancelled, replacesInvite: staleInvite }
         ).catch(e => console.error('[CANCEL] Notification failed:', e.message));
+        if (staleInvite) updated.calendar_warning = STALE_INVITE_WARNING;
 
         return updated;
     },

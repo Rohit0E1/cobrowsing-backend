@@ -27,7 +27,12 @@ router.get('/:toolkit', verifyToken, handle((req) => ConnectorService.status(req
 router.post('/:toolkit/connect', verifyToken, handle((req) => ConnectorService.connect(req.user, req.params.toolkit)));
 
 // Disconnect: removes the advisor's connection; the next use shows the Connect card again.
-router.delete('/:toolkit', verifyToken, handle((req) => ConnectorService.disconnect(req.user, req.params.toolkit)));
+// Google Calendar answers 409 while upcoming presentations' invites live on it; ?force=true goes ahead anyway.
+router.delete(
+    '/:toolkit',
+    verifyToken,
+    handle((req) => ConnectorService.disconnect(req.user, req.params.toolkit, { force: req.query.force === 'true' })),
+);
 
 // Run one of the app's tools as the advisor: { tool: "GOOGLECALENDAR_EVENTS_LIST", arguments: {...} }
 // Writes come back as resultType "input_required"; resend with { inputResponses, requestState } once the advisor answers.

@@ -262,6 +262,9 @@ const initDb = async () => {
             INSERT INTO user_tenants (user_id, tenant_id) SELECT id, tenant_id FROM users
             ON CONFLICT DO NOTHING;
 
+            -- Set when the presentation's invite lives on the advisor's own Google Calendar (that calendar's id).
+            ALTER TABLE scheduled_meetings ADD COLUMN IF NOT EXISTS advisor_calendar_id VARCHAR(300);
+
             CREATE TABLE IF NOT EXISTS connector_settings (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 settings JSONB NOT NULL DEFAULT '{}',
