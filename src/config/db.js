@@ -271,6 +271,12 @@ const initDb = async () => {
             INSERT INTO user_tenants (user_id, tenant_id) SELECT id, tenant_id FROM users
             ON CONFLICT DO NOTHING;
 
+            CREATE TABLE IF NOT EXISTS connector_settings (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                settings JSONB NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
             DROP INDEX IF EXISTS uq_clients_email;
             DROP INDEX IF EXISTS uq_clients_phone;
             DROP INDEX IF EXISTS idx_clients_email_unique;

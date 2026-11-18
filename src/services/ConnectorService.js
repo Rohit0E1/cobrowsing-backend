@@ -1,4 +1,5 @@
 const { Composio, ComposioToolInputRequiredError } = require('@composio/core');
+const { pool } = require('../config/db');
 
 // Apps an advisor may connect. Composio sessions are scoped to these; add a slug here to offer another app.
 const TOOLKITS = ['googlecalendar', 'gmail', 'googledrive'];
@@ -62,8 +63,62 @@ async function sessionFor(user) {
     return sessions.get(id);
 }
 
+/** Advisor preferences for connector tools; anything else in the body is dropped. */
+const SETTINGS = {
+    defaultCalendarId: (v) => typeof v === 'string' && v.length <= 200,
+    emailSignature: (v) => typeof v === 'string' && v.length <= 1000,
+};
+
+function cleanSettings(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw http(400, 'settings must be an object');
+    const out = {};
+    for (const [key, valid] of Object.entries(SETTINGS)) {
+        if (input[key] === undefined) continue;
+        if (!valid(input[key])) throw http(400, `Invalid ${key}`);
+        out[key] = input[key].trim();
+    }
+    return out;
+}
+
 const ConnectorService = {
     TOOLKITS,
+
+    /** Every app with whether the advisor has it connected (the settings panel). */
+    async list(user) {
+        const session = await sessionFor(user);
+        const { items } = await session.toolkits({ toolkits: TOOLKITS });
+        return TOOLKITS.map((toolkit) => {
+            const item = items.find((i) => i.slug === toolkit);
+            return { toolkit, name: item?.name ?? toolkit, connected: Boolean(item?.connection?.isActive) };
+        });
+    },
+
+    /** Removes the advisor's Composio connections for the app, expired ones included. */
+    async disconnect(user, toolkit) {
+        assertToolkit(toolkit);
+        const { items } = await composio().connectedAccounts.list({
+            userIds: [composioUserId(user)],
+            toolkitSlugs: [toolkit],
+        });
+        for (const account of items) await composio().connectedAccounts.delete(account.id);
+        return { toolkit, connected: false, removed: items.length };
+    },
+
+    async getSettings(user) {
+        const { rows } = await pool.query('SELECT settings FROM connector_settings WHERE user_id = $1', [user.id]);
+        return rows[0]?.settings ?? {};
+    },
+
+    async saveSettings(user, input) {
+        const settings = cleanSettings(input);
+        const { rows } = await pool.query(
+            `INSERT INTO connector_settings (user_id, settings, updated_at) VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET settings = connector_settings.settings || EXCLUDED.settings, updated_at = NOW()
+             RETURNING settings`,
+            [user.id, settings],
+        );
+        return rows[0].settings;
+    },
 
     /** Whether the advisor has an active connection for the toolkit. */
     async status(user, toolkit) {
