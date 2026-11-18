@@ -1,7 +1,7 @@
 const { Composio } = require('@composio/core');
 
 // Apps an advisor may connect. Composio sessions are scoped to these; add a slug here to offer another app.
-const TOOLKITS = ['googlecalendar'];
+const TOOLKITS = ['googlecalendar', 'gmail', 'googledrive'];
 
 let client = null;
 const sessions = new Map(); // composio user id -> Promise<session>
