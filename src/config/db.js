@@ -337,6 +337,32 @@ const initDb = async () => {
             console.warn('[DB] Could not create unique index on clients.phone — existing duplicates may be present:', e.message);
         }
 
+        // Knowledge search needs pgvector. Without it the app runs and the knowledge routes answer 503.
+        try {
+            await pool.query(`
+                CREATE EXTENSION IF NOT EXISTS vector;
+
+                CREATE TABLE IF NOT EXISTS knowledge_chunks (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    scope VARCHAR(300) NOT NULL,
+                    source VARCHAR(20) NOT NULL,
+                    source_id VARCHAR(300) NOT NULL,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    meeting_uuid VARCHAR(255),
+                    text TEXT NOT NULL,
+                    content_hash CHAR(64) NOT NULL,
+                    embedding vector(768) NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_scope ON knowledge_chunks(scope);
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_client ON knowledge_chunks(tenant_id, client_id);
+            `);
+        } catch (e) {
+            console.warn('[DB] Knowledge search disabled (pgvector unavailable):', e.message);
+        }
+
         console.log("[DB] Database initialized and indexes verified.");
     } catch (err) {
         console.error("[DB] Initialization error:", err);
