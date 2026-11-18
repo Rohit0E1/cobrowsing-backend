@@ -47,12 +47,17 @@ const MeetingService = {
             SELECT
                 m.*,
                 u.name AS moderator_name,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
+                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
+                sm.id AS schedule_id,
+                sm.client_name,
+                sm.status AS schedule_status
             FROM meetings m
             LEFT JOIN users u ON m.moderator_id = u.id
             LEFT JOIN participants p ON p.meeting_id = m.id
+            LEFT JOIN scheduled_meetings sm ON sm.meeting_uuid = m.uuid
             WHERE m.tenant_id = $1
-            GROUP BY m.id, u.name
+            GROUP BY m.id, u.name, sm.id
             ORDER BY m.id DESC
         `, [tenantId]);
         return res.rows;

@@ -145,6 +145,10 @@ const SchedulingService = {
         );
 
         const updated = res.rows[0];
+        // The presentations list shows the room's time, so keep it in step with the schedule.
+        if (existingUuid) {
+            await pool.query('UPDATE meetings SET start_time = $1 WHERE uuid = $2', [start, existingUuid]);
+        }
         const salesperson = await getSalesperson(userId);
         const icalUid = existingUuid ? buildIcalUid(existingUuid) : null;
         NotificationService.sendReschedule(
@@ -177,6 +181,11 @@ const SchedulingService = {
              WHERE id = $1 AND created_by = $2 RETURNING *`,
             [safeId, userId]
         );
+        // Close the presentation room too, so it no longer counts as upcoming or live anywhere.
+        // (Joining by link does not check is_active; blocking that is a separate change.)
+        if (existing.meeting_uuid) {
+            await pool.query('UPDATE meetings SET is_active = FALSE WHERE uuid = $1', [existing.meeting_uuid]);
+        }
 
         const updated = res.rows[0];
         const salesperson = await getSalesperson(userId);
