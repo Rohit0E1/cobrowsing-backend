@@ -62,6 +62,7 @@ const MeetingService = {
                 COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
                 -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
                 sm.id AS schedule_id,
+                sm.calendar_event_id,
                 sm.client_name,
                 sm.status AS schedule_status
             FROM meetings m
