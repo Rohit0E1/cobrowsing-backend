@@ -39,3 +39,20 @@ test("questions about email are recognised, others are not", () => {
         assert.ok(!asksAboutEmail(q), q);
     }
 });
+
+test('assistant conversations keep facts, not questions or "no record" replies', () => {
+    const { worthRemembering } = require('../src/services/KnowledgeService');
+    const keep = [
+        { role: 'advisor', text: 'She wants a 3 BHK under 2 crore. Draft an email to her.' },
+        { role: 'advisor', text: 'Can you add Tapaswin as a new client' },
+        { role: 'assistant', text: 'Renamed Tapaswin to "Tapaswin Padhy".' },
+    ];
+    const drop = [
+        { role: 'advisor', text: 'What budget did I mention for her?' },
+        { role: 'advisor', text: 'did that email go out' },
+        { role: 'assistant', text: 'I have no record of you mentioning a budget for Tapaswin.' },
+        { role: 'assistant', text: "I can't see whether you sent it." },
+    ];
+    for (const m of keep) assert.ok(worthRemembering(m), m.text);
+    for (const m of drop) assert.ok(!worthRemembering(m), m.text);
+});

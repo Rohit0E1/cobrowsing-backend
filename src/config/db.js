@@ -265,6 +265,18 @@ const initDb = async () => {
             -- Set when the presentation's invite lives on the advisor's own Google Calendar (that calendar's id).
             ALTER TABLE scheduled_meetings ADD COLUMN IF NOT EXISTS advisor_calendar_id VARCHAR(300);
 
+            -- What each advisor said to the voice/chat assistant and what it answered, per session (room).
+            CREATE TABLE IF NOT EXISTS assistant_messages (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                session_id VARCHAR(120) NOT NULL,
+                role VARCHAR(10) NOT NULL CHECK (role IN ('advisor', 'assistant')),
+                text TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_assistant_messages_user ON assistant_messages(user_id, created_at);
+
             CREATE TABLE IF NOT EXISTS connector_settings (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 settings JSONB NOT NULL DEFAULT '{}',
