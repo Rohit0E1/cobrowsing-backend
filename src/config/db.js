@@ -270,6 +270,8 @@ const initDb = async () => {
                 settings JSONB NOT NULL DEFAULT '{}',
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+            -- When the advisor's email was last indexed for knowledge search (NULL: never, or forgotten).
+            ALTER TABLE connector_settings ADD COLUMN IF NOT EXISTS email_synced_at TIMESTAMPTZ;
 
             DROP INDEX IF EXISTS uq_clients_email;
             DROP INDEX IF EXISTS uq_clients_phone;
@@ -349,6 +351,10 @@ const initDb = async () => {
                     embedding vector(768) NOT NULL,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
+
+                -- Emails are private to the advisor who owns the mailbox; NULL = shared across the tenant.
+                ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+                ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
 
                 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_scope ON knowledge_chunks(scope);
                 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_client ON knowledge_chunks(tenant_id, client_id);

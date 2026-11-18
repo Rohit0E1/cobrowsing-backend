@@ -123,7 +123,14 @@ async function collect(scope) {
  */
 async function reindex(scope) {
     if (!(await isAvailable())) return { scope, skipped: 'knowledge search is not set up' };
-    const found = await collect(scope);
+    return store(scope, await collect(scope));
+}
+
+/**
+ * Replaces a scope's chunks with `found.items` ({ source, sourceId, text, header }). `ownerUserId` makes them
+ * private to that advisor (emails); `occurredAt` dates them when no meeting does. `found` null clears the scope.
+ */
+async function store(scope, found) {
 
     const { rows: existing } = await pool.query(
         'SELECT content_hash, embedding::text AS embedding FROM knowledge_chunks WHERE scope = $1',
@@ -145,9 +152,13 @@ async function reindex(scope) {
         await client.query('DELETE FROM knowledge_chunks WHERE scope = $1', [scope]);
         for (const item of items) {
             await client.query(
-                `INSERT INTO knowledge_chunks (tenant_id, scope, source, source_id, client_id, meeting_uuid, text, content_hash, embedding)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)`,
-                [found.tenantId, scope, item.source, item.sourceId, found.clientId, found.meetingUuid, item.text, item.hash, known.get(item.hash)],
+                `INSERT INTO knowledge_chunks
+                   (tenant_id, scope, source, source_id, client_id, meeting_uuid, text, content_hash, embedding, owner_user_id, occurred_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector, $10, $11)`,
+                [
+                    found.tenantId, scope, item.source, item.sourceId, found.clientId, found.meetingUuid, item.text, item.hash,
+                    known.get(item.hash), found.ownerUserId ?? null, found.occurredAt ?? null,
+                ],
             );
         }
         await client.query('COMMIT');
@@ -175,31 +186,35 @@ function queue(scope) {
     return next;
 }
 
-/** The chunks closest in meaning to the question, within one tenant and optionally one client. */
-async function search({ tenantId, query, clientId = null, limit = 5 }) {
+/**
+ * The chunks closest in meaning to the question, within one tenant and optionally one client. Private chunks
+ * (an advisor's emails) only show to their owner, `userId`.
+ */
+async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
     if (!(await isAvailable())) throw Object.assign(new Error('Knowledge search is not set up'), { status: 503 });
     const [vector] = await embed([query], 'RETRIEVAL_QUERY');
     // shortcut: exact scan, no vector index; fine for thousands of chunks per tenant. Add an HNSW index
     // (with pgvector 0.8 iterative scans, so the tenant filter still returns enough rows) past ~100k chunks.
     const { rows } = await pool.query(
         `SELECT k.source, k.text, 1 - (k.embedding <=> $2::vector) AS score,
-                c.name AS client, m.start_time AS meeting_time, k.meeting_uuid
+                c.name AS client, COALESCE(m.start_time, k.occurred_at) AS happened_at, k.meeting_uuid
          FROM knowledge_chunks k
          LEFT JOIN clients c ON c.id = k.client_id
          LEFT JOIN meetings m ON m.uuid = k.meeting_uuid
          WHERE k.tenant_id = $1 AND ($3::int IS NULL OR k.client_id = $3)
+           AND (k.owner_user_id IS NULL OR k.owner_user_id = $5)
          ORDER BY k.embedding <=> $2::vector
          LIMIT $4`,
-        [tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20)],
+        [tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20), userId ?? null],
     );
     return rows.map((r) => ({
         source: r.source,
         client: r.client,
-        date: r.meeting_time ? day(r.meeting_time) : null,
+        date: r.happened_at ? day(r.happened_at) : null,
         meetingUuid: r.meeting_uuid,
         score: Number(Number(r.score).toFixed(3)),
         text: r.text,
     }));
 }
 
-module.exports = { queue, reindex, search, chunkText, isAvailable };
+module.exports = { queue, reindex, store, search, chunkText, isAvailable };
