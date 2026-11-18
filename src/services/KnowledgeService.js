@@ -25,6 +25,11 @@ async function isAvailable() {
     return available;
 }
 
+/** Questions about email ("what did I email Rahul", "inbox", "ईमेल") rank emails ahead of near-equal notes. */
+const EMAIL_WORDS = /\b(e-?mails?|e-?mailed|mailed|inbox)\b|ईमेल|मेल/i;
+const asksAboutEmail = (query) => EMAIL_WORDS.test(query);
+const EMAIL_BOOST = 0.1; // on cosine distance; a clearly closer note still wins
+
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const toVector = (values) => `[${values.join(',')}]`;
 
@@ -203,9 +208,12 @@ async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
          LEFT JOIN meetings m ON m.uuid = k.meeting_uuid
          WHERE k.tenant_id = $1 AND ($3::int IS NULL OR k.client_id = $3)
            AND (k.owner_user_id IS NULL OR k.owner_user_id = $5)
-         ORDER BY k.embedding <=> $2::vector
+         ORDER BY (k.embedding <=> $2::vector) - CASE WHEN $6 AND k.source = 'email' THEN $7::float ELSE 0 END
          LIMIT $4`,
-        [tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20), userId ?? null],
+        [
+            tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20), userId ?? null,
+            asksAboutEmail(query), EMAIL_BOOST,
+        ],
     );
     return rows.map((r) => ({
         source: r.source,
@@ -217,4 +225,4 @@ async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
     }));
 }
 
-module.exports = { queue, reindex, store, search, chunkText, isAvailable };
+module.exports = { queue, reindex, store, search, chunkText, isAvailable, asksAboutEmail };

@@ -10,9 +10,11 @@ const KnowledgeService = require('./KnowledgeService');
 
 const SYNC_EVERY_MS = 15 * 60 * 1000;
 const FIRST_SYNC_DAYS = 180;
+const WINDOW_DAYS = 7;
 const ADDRESSES_PER_QUERY = 15; // Gmail search strings get unwieldy beyond this
 const PAGE_SIZE = 50;
-const MAX_MESSAGES_PER_SYNC = 300;
+const MAX_MESSAGES_PER_RUN = 2000; // a run stops after the window that crosses this; the next run carries on
+const OVERLAP_MS = 60 * 1000; // re-read a minute across window edges; indexing is idempotent per message
 const MAX_BODY_CHARS = 6000;
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -48,21 +50,30 @@ async function advisorAddress(user) {
     return String(r.data?.emailAddress ?? r.data?.response_data?.emailAddress ?? '').toLowerCase();
 }
 
-/** One Gmail search, all pages, up to `budget` messages. */
-async function fetchMessages(user, query, budget) {
+/** One Gmail search, every page. */
+async function fetchMessages(user, query) {
     const out = [];
     let pageToken;
     do {
         const r = await ConnectorService.runAsAdvisor(user, 'gmail', 'GMAIL_FETCH_EMAILS', {
             query,
-            max_results: Math.min(PAGE_SIZE, budget - out.length),
+            max_results: PAGE_SIZE,
             include_payload: false,
             ...(pageToken ? { page_token: pageToken } : {}),
         });
         if (r.resultType !== 'completed') throw new Error(`Gmail search failed: ${r.error || r.resultType} (log ${r.logId || '-'})`);
         out.push(...(r.data?.messages ?? []));
         pageToken = r.data?.nextPageToken;
-    } while (pageToken && out.length < budget);
+    } while (pageToken);
+    return out;
+}
+
+/** [start, end) time windows of `days` from `since` up to `now`, oldest first. */
+function windows(since, now, days = WINDOW_DAYS) {
+    const out = [];
+    for (let start = since.getTime(); start < now.getTime(); start += days * 864e5) {
+        out.push([new Date(start), new Date(Math.min(start + days * 864e5, now.getTime()))]);
+    }
     return out;
 }
 
@@ -103,8 +114,11 @@ async function syncState(user) {
 }
 
 /**
- * Indexes the advisor's client emails since the last sync (the last 180 days the first time). Skips quietly
- * when the setting is off, Gmail isn't connected, or the last sync was under 15 minutes ago (unless `force`).
+ * Indexes the advisor's client emails since the last sync (the last 180 days the first time), one 7-day window
+ * at a time, oldest first. A window is fetched whole for every client before `email_synced_at` moves past it,
+ * so a run that stops early (MAX_MESSAGES_PER_RUN, an error) loses nothing: the next run starts from there.
+ * Skips quietly when the setting is off, Gmail isn't connected, or the last sync was under 15 minutes ago
+ * (unless `force`).
  */
 async function sync(user, { force = false } = {}) {
     const { enabled, syncedAt } = await syncState(user);
@@ -113,27 +127,32 @@ async function sync(user, { force = false } = {}) {
     if (!(await KnowledgeService.isAvailable())) return { skipped: 'knowledge search is not set up' };
     if (!(await ConnectorService.status(user, 'gmail')).connected) return { skipped: 'Gmail is not connected' };
 
-    const startedAt = new Date();
     const since = syncedAt ? new Date(syncedAt) : new Date(Date.now() - FIRST_SYNC_DAYS * 864e5);
     const clients = await clientsByAddress(user.tenantId);
     const own = await advisorAddress(user);
     const list = [...clients.keys()].filter((a) => a !== own);
+    const seconds = (date) => Math.floor(date.getTime() / 1000);
 
-    let messages = 0, chunks = 0;
-    for (let i = 0; i < list.length && messages < MAX_MESSAGES_PER_SYNC; i += ADDRESSES_PER_QUERY) {
-        const group = list.slice(i, i + ADDRESSES_PER_QUERY).join(' OR ');
-        const query = `{from:(${group}) to:(${group})} after:${Math.floor(since.getTime() / 1000)}`;
-        for (const m of await fetchMessages(user, query, MAX_MESSAGES_PER_SYNC - messages)) {
-            messages++;
-            chunks += await indexMessage(user, user.tenantId, clients, own, m);
+    let messages = 0, chunks = 0, windowsDone = 0;
+    for (const [start, end] of windows(since, new Date())) {
+        if (messages >= MAX_MESSAGES_PER_RUN) break;
+        const range = `after:${seconds(new Date(start.getTime() - OVERLAP_MS))} before:${seconds(end)}`;
+        for (let i = 0; i < list.length; i += ADDRESSES_PER_QUERY) {
+            const group = list.slice(i, i + ADDRESSES_PER_QUERY).join(' OR ');
+            for (const m of await fetchMessages(user, `{from:(${group}) to:(${group})} ${range}`)) {
+                messages++;
+                chunks += await indexMessage(user, user.tenantId, clients, own, m);
+            }
+        }
+        await pool.query('UPDATE connector_settings SET email_synced_at = $2 WHERE user_id = $1', [user.id, end]);
+        windowsDone++;
+        // Switched off while this ran: drop what it stored and stop.
+        if (!(await syncState(user)).enabled) {
+            await forget(user);
+            return { messages, chunks, windows: windowsDone, stopped: 'email search was switched off' };
         }
     }
-    // shortcut: a sync that hits MAX_MESSAGES_PER_SYNC still moves the cursor, so older overflow is skipped.
-    // Page by date instead if advisors with very busy client inboxes show up.
-    await pool.query('UPDATE connector_settings SET email_synced_at = $2 WHERE user_id = $1', [user.id, startedAt]);
-    // Switched off while this ran: drop what it just stored.
-    if (!(await syncState(user)).enabled) await forget(user);
-    return { messages, chunks };
+    return { messages, chunks, windows: windowsDone };
 }
 
 const running = new Map(); // user id -> promise
@@ -143,7 +162,7 @@ function queueSync(user, options) {
     if (running.has(user.id)) return running.get(user.id);
     const job = sync(user, options)
         .then((r) => {
-            if (r.messages !== undefined) console.log(`[EMAIL KNOWLEDGE] user ${user.id}: ${r.messages} messages, ${r.chunks} chunks`);
+            if (r.messages !== undefined) console.log(`[EMAIL KNOWLEDGE] user ${user.id}: ${r.messages} messages, ${r.chunks} chunks, ${r.windows} windows`);
             return r;
         })
         .catch((err) => console.error(`[EMAIL KNOWLEDGE] sync for user ${user.id} failed:`, err.message))
@@ -163,4 +182,4 @@ async function forget(user) {
     return { removed: rowCount };
 }
 
-module.exports = { sync, queueSync, forget, cleanBody, addresses };
+module.exports = { sync, queueSync, forget, cleanBody, addresses, windows };

@@ -28,3 +28,14 @@ test("one very long line is cut, nothing lost", () => {
 test("empty text gives no chunks", () => {
     assert.deepStrictEqual(chunkText("\n\n  \n"), []);
 });
+
+const { asksAboutEmail } = require("../src/services/KnowledgeService");
+
+test("questions about email are recognised, others are not", () => {
+    for (const q of ["What did I email Rahul about?", "anything in my inbox from Sofia", "Rahul ko kya ईमेल kiya tha", "did she e-mail back"]) {
+        assert.ok(asksAboutEmail(q), q);
+    }
+    for (const q of ["What did Rahul say about parking?", "When is the site visit?", "Mailbox Heights brochure"]) {
+        assert.ok(!asksAboutEmail(q), q);
+    }
+});
