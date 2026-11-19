@@ -2,8 +2,6 @@ const KnowledgeService = require("./KnowledgeService");
 const { randomBytes } = require("node:crypto");
 const { pool } = require("../config/db");
 
-const RECORDING_MAX_WAIT_MS = 2 * 60 * 60 * 1000;
-
 const MeetingService = {
     async create(tenantId, moderatorId, { start_time, duration, meeting_for }) {
         const uuid = randomBytes(4).toString("hex");
@@ -135,43 +133,6 @@ const MeetingService = {
 
     async clearEnableXRoom(uuid) {
         await pool.query("UPDATE meetings SET enablex_room_id = NULL WHERE uuid = $1", [uuid]);
-    },
-
-    async getRecordings(meetingId) {
-        const EnableXService = require("../enablex/EnableXService");
-        const { rows } = await pool.query(
-            "SELECT id, enablex_room_id, status, files, ended_at FROM meeting_recordings WHERE meeting_id = $1 ORDER BY ended_at DESC",
-            [meetingId]
-        );
-
-        for (const row of rows) {
-            if (row.status !== "processing") continue;
-            try {
-                const archive = await EnableXService.getArchiveByRoom(row.enablex_room_id);
-                const files = archive
-                    .map((a) => ({ conf_num: a.conf_num, url: (a.live_recording?.[0] || a.transcoded?.[0])?.url }))
-                    .filter((f) => f.url);
-                const waitedTooLong = Date.now() - new Date(row.ended_at).getTime() > RECORDING_MAX_WAIT_MS;
-                const status = files.length ? "ready" : waitedTooLong ? "none" : "processing";
-                if (status === "processing") continue;
-                await pool.query(
-                    "UPDATE meeting_recordings SET status = $1, files = $2::jsonb WHERE id = $3",
-                    [status, JSON.stringify(files), row.id]
-                );
-                Object.assign(row, { status, files });
-            } catch (e) {
-                console.warn(`[recordings] archive lookup failed for room ${row.enablex_room_id}:`, e.message);
-            }
-        }
-
-        return rows
-            .filter((r) => r.status !== "none")
-            .map(({ id, status, files, ended_at }) => ({ id, status, files, ended_at }));
-    },
-
-    async getRecordingFileUrl(recordingId, confNum) {
-        const { rows } = await pool.query("SELECT files FROM meeting_recordings WHERE id = $1", [recordingId]);
-        return rows[0]?.files.find((f) => f.conf_num === confNum)?.url || null;
     },
 
     async updateTranscript(uuid, transcript) {
