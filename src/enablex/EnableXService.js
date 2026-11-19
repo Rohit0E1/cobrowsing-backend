@@ -1,5 +1,6 @@
 const axios = require("axios");
 const https = require("https");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const APP_ID = process.env.ENABLEX_APP_ID;
@@ -15,6 +16,19 @@ const axiosInstance = axios.create({
   },
 });
 
+function recordingSettings(meetingUUID) {
+  const recorderUrl = process.env.ENABLEX_RECORDER_URL;
+  if (!recorderUrl) return { auto_recording: true };
+  const key = jwt.sign({ typ: "recorder", uuid: meetingUUID }, process.env.JWT_SECRET, { expiresIn: "2d" });
+  return {
+    auto_recording: false,
+    live_recording: {
+      auto_recording: true,
+      url: `${recorderUrl.replace(/\/$/, "")}/${meetingUUID}?key=${key}&token=`,
+    },
+  };
+}
+
 class EnableXService {
   static async createRoom(meetingUUID, meetingTitle = "Propley Advisory") {
     try {
@@ -29,7 +43,7 @@ class EnableXService {
           participants: 10,
           duration: 60,
           scheduled: false,
-          auto_recording: true,
+          ...recordingSettings(meetingUUID),
         },
         sip: { enabled: false },
       };
