@@ -46,7 +46,8 @@ const MeetingService = {
             SELECT
                 m.*,
                 u.name AS moderator_name,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
+                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count
             FROM meetings m
             LEFT JOIN users u ON m.moderator_id = u.id
             LEFT JOIN participants p ON p.meeting_id = m.id
