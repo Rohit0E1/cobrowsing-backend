@@ -271,6 +271,29 @@ const initDb = async () => {
             INSERT INTO user_tenants (user_id, tenant_id) SELECT id, tenant_id FROM users
             ON CONFLICT DO NOTHING;
 
+            -- Set when the presentation's invite lives on the advisor's own Google Calendar (that calendar's id).
+            ALTER TABLE scheduled_meetings ADD COLUMN IF NOT EXISTS advisor_calendar_id VARCHAR(300);
+
+            -- What each advisor said to the voice/chat assistant and what it answered, per session (room).
+            CREATE TABLE IF NOT EXISTS assistant_messages (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                session_id VARCHAR(120) NOT NULL,
+                role VARCHAR(10) NOT NULL CHECK (role IN ('advisor', 'assistant')),
+                text TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_assistant_messages_user ON assistant_messages(user_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS connector_settings (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                settings JSONB NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            -- When the advisor's email was last indexed for knowledge search (NULL: never, or forgotten).
+            ALTER TABLE connector_settings ADD COLUMN IF NOT EXISTS email_synced_at TIMESTAMPTZ;
+
             DROP INDEX IF EXISTS uq_clients_email;
             DROP INDEX IF EXISTS uq_clients_phone;
             DROP INDEX IF EXISTS idx_clients_email_unique;
@@ -329,6 +352,36 @@ const initDb = async () => {
             );
         } catch (e) {
             console.warn('[DB] Could not create unique index on clients.phone — existing duplicates may be present:', e.message);
+        }
+
+        // Knowledge search needs pgvector. Without it the app runs and the knowledge routes answer 503.
+        try {
+            await pool.query(`
+                CREATE EXTENSION IF NOT EXISTS vector;
+
+                CREATE TABLE IF NOT EXISTS knowledge_chunks (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    scope VARCHAR(300) NOT NULL,
+                    source VARCHAR(20) NOT NULL,
+                    source_id VARCHAR(300) NOT NULL,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    meeting_uuid VARCHAR(255),
+                    text TEXT NOT NULL,
+                    content_hash CHAR(64) NOT NULL,
+                    embedding vector(768) NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                -- Emails are private to the advisor who owns the mailbox; NULL = shared across the tenant.
+                ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+                ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
+
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_scope ON knowledge_chunks(scope);
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_client ON knowledge_chunks(tenant_id, client_id);
+            `);
+        } catch (e) {
+            console.warn('[DB] Knowledge search disabled (pgvector unavailable):', e.message);
         }
 
         console.log("[DB] Database initialized and indexes verified.");
