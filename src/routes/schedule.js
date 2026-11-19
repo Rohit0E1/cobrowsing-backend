@@ -4,6 +4,21 @@ const SchedulingService = require('../services/SchedulingService');
 
 const router = express.Router();
 
+function isValidIndianPhone(raw) {
+    const digits = String(raw).replace(/\D/g, "");
+    let core = digits;
+    if (core.length === 12 && core.startsWith("91")) core = core.slice(2);
+    else if (core.length === 11 && core.startsWith("0")) core = core.slice(1);
+    return /^[6-9]\d{9}$/.test(core);
+}
+
+function normalizeIndianPhone(raw) {
+    let digits = String(raw).replace(/\D/g, "");
+    if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+    else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+    return digits;
+}
+
 // Get all scheduled meetings (scoped to requesting user)
 router.get('/', verifyToken, async (req, res) => {
     try {
@@ -31,8 +46,10 @@ router.post('/', verifyToken, async (req, res) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(client_email.trim())) {
             return res.status(400).json({ error: 'client_email is invalid' });
         }
-        if (client_phone && String(client_phone).trim().length > 50) {
-            return res.status(400).json({ error: 'client_phone too long (max 50)' });
+        if (client_phone && String(client_phone).trim() !== '') {
+            if (!isValidIndianPhone(client_phone)) {
+                return res.status(400).json({ error: 'client_phone must be a valid Indian mobile number (10 digits starting with 6-9)' });
+            }
         }
         if (client_city && (typeof client_city !== 'string' || client_city.trim().length > 255)) {
             return res.status(400).json({ error: 'client_city must be a string up to 255 chars' });
