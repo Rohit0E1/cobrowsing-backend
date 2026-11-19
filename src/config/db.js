@@ -94,6 +94,15 @@ const initDb = async () => {
                 END IF;
             END $$;
 
+            CREATE TABLE IF NOT EXISTS meeting_recordings (
+                id SERIAL PRIMARY KEY,
+                meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
+                enablex_room_id VARCHAR(255) UNIQUE NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'processing',
+                files JSONB NOT NULL DEFAULT '[]',
+                ended_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
             CREATE TABLE IF NOT EXISTS participants (
                 id SERIAL PRIMARY KEY,
                 meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
