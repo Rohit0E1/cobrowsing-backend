@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const { verifyToken } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
+const RecordingService = require("../services/RecordingService");
 const { requireTenantMeeting } = require("../middleware/meetingAccess");
 
 const router = express.Router();
@@ -47,7 +48,7 @@ router.get("/:uuid/moderator", verifyToken, requireTenantMeeting, (req, res) => 
 
 router.get("/:uuid/recordings", verifyToken, requireTenantMeeting, async (req, res) => {
     try {
-        const recordings = await MeetingService.getRecordings(req.meeting.id);
+        const recordings = await RecordingService.listForMeeting(req.meeting.id);
         res.json(recordings.map((r) => ({
             ...r,
             files: r.files.map(({ conf_num }) => ({

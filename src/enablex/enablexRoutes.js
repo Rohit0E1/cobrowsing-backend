@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const EnableXService = require("./EnableXService");
 const MeetingService = require("../services/MeetingService");
+const RecordingService = require("../services/RecordingService");
 
 const router = express.Router();
 
@@ -95,10 +96,13 @@ router.get("/recordings/stream", async (req, res) => {
   if (claims.typ !== "recording") return res.status(401).json({ error: "Invalid link" });
 
   try {
-    const url = await MeetingService.getRecordingFileUrl(claims.rid, claims.conf);
-    if (!url) return res.status(404).json({ error: "Recording not found" });
+    const file = await RecordingService.getFile(claims.rid, claims.conf);
+    if (!file) return res.status(404).json({ error: "Recording not found" });
 
-    const upstream = await EnableXService.streamRecording(url, req.headers.range);
+    const signed = file.key && (await RecordingService.signedUrl(file.key));
+    if (signed) return res.redirect(302, signed);
+
+    const upstream = await EnableXService.streamRecording(file.url, req.headers.range);
     if (upstream.status >= 400) {
       upstream.data.destroy();
       console.error(`[ENX_RECORDING] upstream ${upstream.status} for recording ${claims.rid}`);
