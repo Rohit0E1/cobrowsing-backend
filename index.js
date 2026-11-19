@@ -13,6 +13,7 @@ const { initDb, pool } = require("./src/config/db");
 const meetingHandler = require("./src/socket/meetingHandler");
 const analyticsHandler = require("./src/socket/analyticsHandler");
 const keepAlive = require("./src/keepAlive");
+const RecordingService = require("./src/services/RecordingService");
 
 const authRouter = require("./src/routes/auth");
 const meetingsRouter = require("./src/routes/meetings");
@@ -100,6 +101,7 @@ const startServer = async () => {
     const port = process.env.PORT || 5001;
     server.listen(port, () => {
         console.log(`[AUUM] Server active on port ${port}`);
+        RecordingService.startSweeper();
 
         // Start keep-alive only in production
         if (process.env.RENDER_EXTERNAL_URL) {
