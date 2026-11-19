@@ -1,4 +1,5 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const { verifyToken } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
 const { requireTenantMeeting } = require("../middleware/meetingAccess");
@@ -42,6 +43,25 @@ router.get("/:uuid", async (req, res) => {
 // Moderator Session Check — any logged-in user in the meeting's tenant may host it
 router.get("/:uuid/moderator", verifyToken, requireTenantMeeting, (req, res) => {
     res.json({ status: "authorized", meeting: req.meeting });
+});
+
+router.get("/:uuid/recordings", verifyToken, requireTenantMeeting, async (req, res) => {
+    try {
+        const recordings = await MeetingService.getRecordings(req.meeting.id);
+        res.json(recordings.map((r) => ({
+            ...r,
+            files: r.files.map(({ conf_num }) => ({
+                conf_num,
+                stream_path: `/api/v1/enablex/recordings/stream?token=${jwt.sign(
+                    { typ: "recording", rid: r.id, conf: conf_num },
+                    process.env.JWT_SECRET,
+                    { expiresIn: "6h" }
+                )}`,
+            })),
+        })));
+    } catch (err) {
+        res.status(500).json({ error: "Failed to load recordings" });
+    }
 });
 
 // Save Meeting Transcript
