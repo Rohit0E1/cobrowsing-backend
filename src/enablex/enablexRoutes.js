@@ -1,4 +1,5 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const EnableXService = require("./EnableXService");
 const MeetingService = require("../services/MeetingService");
 
@@ -81,6 +82,37 @@ router.post("/token", async (req, res) => {
     res.json({ token, roomId });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/recordings/stream", async (req, res) => {
+  let claims;
+  try {
+    claims = jwt.verify(String(req.query.token || ""), process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired link" });
+  }
+  if (claims.typ !== "recording") return res.status(401).json({ error: "Invalid link" });
+
+  try {
+    const url = await MeetingService.getRecordingFileUrl(claims.rid, claims.conf);
+    if (!url) return res.status(404).json({ error: "Recording not found" });
+
+    const upstream = await EnableXService.streamRecording(url, req.headers.range);
+    if (upstream.status >= 400) {
+      upstream.data.destroy();
+      console.error(`[ENX_RECORDING] upstream ${upstream.status} for recording ${claims.rid}`);
+      return res.status(502).json({ error: "Recording unavailable" });
+    }
+
+    res.status(upstream.status);
+    for (const h of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+      if (upstream.headers[h]) res.setHeader(h, upstream.headers[h]);
+    }
+    res.on("close", () => upstream.data.destroy());
+    upstream.data.pipe(res);
+  } catch (err) {
+    res.status(502).json({ error: "Recording unavailable" });
   }
 });
 
