@@ -1,4 +1,5 @@
 const { pool } = require('../config/db');
+const KnowledgeService = require('./KnowledgeService');
 
 function validateClientId(id) {
     const n = parseInt(id, 10);
@@ -30,6 +31,7 @@ const ClientNoteService = {
              RETURNING *`,
             [cid, body, author || null, createdBy || null]
         );
+        KnowledgeService.queue(`client:${cid}`);
         return res.rows[0];
     },
 
@@ -45,6 +47,7 @@ const ClientNoteService = {
              RETURNING *`,
             [nid, cid, body ?? null, author ?? null]
         );
+        if (res.rows[0]) KnowledgeService.queue(`client:${cid}`);
         return res.rows[0] || null;
     },
 
@@ -55,6 +58,7 @@ const ClientNoteService = {
             'DELETE FROM client_notes WHERE id = $1 AND client_id = $2 RETURNING *',
             [nid, cid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`client:${cid}`);
         return res.rows[0] || null;
     },
 };
