@@ -29,7 +29,7 @@ class EnableXService {
           participants: 10,
           duration: 60,
           scheduled: false,
-          auto_recording: false,
+          auto_recording: true,
         },
         sip: { enabled: false },
       };
@@ -84,6 +84,23 @@ class EnableXService {
       });
       return null;
     }
+  }
+
+  static async getArchiveByRoom(roomId) {
+    const response = await axiosInstance.get(`/archive/room/${roomId}`);
+    return response.data.archive || [];
+  }
+
+  static streamRecording(url, range) {
+    return axios.get(url, {
+      auth: {
+        username: process.env.ENABLEX_RECORDING_USER,
+        password: process.env.ENABLEX_RECORDING_PASS,
+      },
+      headers: range ? { Range: range } : {},
+      responseType: "stream",
+      validateStatus: () => true,
+    });
   }
 
   static async deleteRoom(roomId) {
