@@ -1,3 +1,4 @@
+const KnowledgeService = require("./KnowledgeService");
 const { randomBytes } = require("node:crypto");
 const { pool } = require("../config/db");
 
@@ -18,6 +19,15 @@ const MeetingService = {
         return res.rows[0];
     },
 
+    /** True when the presentation behind this room was cancelled (clients may no longer join it). */
+    async isCancelled(uuid) {
+        const res = await pool.query(
+            "SELECT 1 FROM scheduled_meetings WHERE meeting_uuid = $1 AND status = 'cancelled' LIMIT 1",
+            [uuid]
+        );
+        return res.rowCount > 0;
+    },
+
     async recoverState(uuid) {
         const res = await pool.query("SELECT id, state FROM meetings WHERE uuid = $1", [uuid]);
         return res.rows[0] || null;
@@ -29,7 +39,10 @@ const MeetingService = {
                 m.*,
                 u.name AS moderator_name,
                 t.deck_origin,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count
+                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                EXISTS (
+                    SELECT 1 FROM scheduled_meetings sm WHERE sm.meeting_uuid = m.uuid AND sm.status = 'cancelled'
+                ) AS cancelled
              FROM meetings m
              JOIN tenants t ON t.id = m.tenant_id
              LEFT JOIN users u ON m.moderator_id = u.id
@@ -47,12 +60,18 @@ const MeetingService = {
                 m.*,
                 u.name AS moderator_name,
                 COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
-                (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count
+                (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count,
+                -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
+                sm.id AS schedule_id,
+                sm.calendar_event_id,
+                sm.client_name,
+                sm.status AS schedule_status
             FROM meetings m
             LEFT JOIN users u ON m.moderator_id = u.id
             LEFT JOIN participants p ON p.meeting_id = m.id
+            LEFT JOIN scheduled_meetings sm ON sm.meeting_uuid = m.uuid
             WHERE m.tenant_id = $1
-            GROUP BY m.id, u.name
+            GROUP BY m.id, u.name, sm.id
             ORDER BY m.id DESC
         `, [tenantId]);
         return res.rows;
@@ -135,6 +154,7 @@ const MeetingService = {
             "UPDATE meetings SET transcript = $1 WHERE uuid = $2 RETURNING uuid, transcript",
             [transcript, uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
     
@@ -147,6 +167,7 @@ const MeetingService = {
              RETURNING uuid, notes`,
             [noteId, noteText, uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 
@@ -164,6 +185,7 @@ const MeetingService = {
             "UPDATE meetings SET notes = $1::jsonb WHERE uuid = $2 RETURNING uuid, notes",
             [JSON.stringify(updatedNotes), uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 
@@ -177,6 +199,7 @@ const MeetingService = {
             "UPDATE meetings SET notes = $1::jsonb WHERE uuid = $2 RETURNING uuid, notes",
             [JSON.stringify(updatedNotes), uuid]
         );
+        if (res.rows[0]) KnowledgeService.queue(`meeting:${uuid}`);
         return res.rows[0] || null;
     },
 };

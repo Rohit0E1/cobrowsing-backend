@@ -53,20 +53,28 @@ function assertToolkit(toolkit) {
     if (!TOOLKITS.includes(toolkit)) throw http(404, `Unknown connector: ${toolkit}`);
 }
 
-async function sessionFor(user) {
+/**
+ * `approvals: false` is for writes the backend makes itself after the advisor already confirmed them in
+ * Propley (e.g. the invite for a presentation they just scheduled). Tool calls the assistant asks for go
+ * through /execute, which always uses the gated session.
+ */
+async function sessionFor(user, { approvals = true } = {}) {
     const id = composioUserId(user);
-    if (!sessions.has(id)) {
-        const created = composio().create(id, { toolkits: TOOLKITS, ...APPROVALS });
-        created.catch(() => sessions.delete(id)); // don't cache a failed create
-        sessions.set(id, created);
+    const key = approvals ? id : `${id}|system`;
+    if (!sessions.has(key)) {
+        const created = composio().create(id, approvals ? { toolkits: TOOLKITS, ...APPROVALS } : { toolkits: TOOLKITS });
+        created.catch(() => sessions.delete(key)); // don't cache a failed create
+        sessions.set(key, created);
     }
-    return sessions.get(id);
+    return sessions.get(key);
 }
 
 /** Advisor preferences for connector tools; anything else in the body is dropped. */
 const SETTINGS = {
     defaultCalendarId: (v) => typeof v === 'string' && v.length <= 200,
     emailSignature: (v) => typeof v === 'string' && v.length <= 1000,
+    // Let the assistant search the advisor's emails with clients (EmailKnowledgeService). Off unless set.
+    readEmail: (v) => typeof v === 'boolean',
 };
 
 function cleanSettings(input) {
@@ -75,7 +83,7 @@ function cleanSettings(input) {
     for (const [key, valid] of Object.entries(SETTINGS)) {
         if (input[key] === undefined) continue;
         if (!valid(input[key])) throw http(400, `Invalid ${key}`);
-        out[key] = input[key].trim();
+        out[key] = typeof input[key] === 'string' ? input[key].trim() : input[key];
     }
     return out;
 }
@@ -93,15 +101,43 @@ const ConnectorService = {
         });
     },
 
-    /** Removes the advisor's Composio connections for the app, expired ones included. */
-    async disconnect(user, toolkit) {
+    /**
+     * Removes the advisor's Composio connections for the app, expired ones included. Google Calendar is refused
+     * (409) while upcoming presentations have their client invite on it, unless `force`: once disconnected,
+     * Propley can no longer move or cancel those invites.
+     */
+    async disconnect(user, toolkit, { force = false } = {}) {
         assertToolkit(toolkit);
+        if (toolkit === 'googlecalendar' && !force) {
+            const { rows } = await pool.query(
+                `SELECT COUNT(*)::int AS n FROM scheduled_meetings
+                 WHERE created_by = $1 AND advisor_calendar_id IS NOT NULL AND status <> 'cancelled' AND start_time > NOW()`,
+                [user.id],
+            );
+            const n = rows[0].n;
+            if (n > 0) {
+                throw http(
+                    409,
+                    `${n} upcoming presentation${n === 1 ? ' has its' : 's have their'} client invite on your Google Calendar. ` +
+                        "After disconnecting, Propley can't move or cancel those invites; clients would get a separate calendar file instead.",
+                );
+            }
+        }
         const { items } = await composio().connectedAccounts.list({
             userIds: [composioUserId(user)],
             toolkitSlugs: [toolkit],
         });
         for (const account of items) await composio().connectedAccounts.delete(account.id);
         return { toolkit, connected: false, removed: items.length };
+    },
+
+    /** Runs a tool as the advisor without the approval pause. Backend-initiated writes only (see sessionFor). */
+    async runAsAdvisor(user, toolkit, tool, args) {
+        assertToolkit(toolkit);
+        if (!tool.startsWith(`${toolkit.toUpperCase()}_`)) throw http(400, `Tool must belong to ${toolkit}`);
+        const session = await sessionFor(user, { approvals: false });
+        const { resultType, data, error, logId } = await session.execute(tool, args);
+        return { resultType, data, error, logId };
     },
 
     async getSettings(user) {
