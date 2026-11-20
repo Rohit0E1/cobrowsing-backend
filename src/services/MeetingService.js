@@ -60,8 +60,10 @@ const MeetingService = {
                 m.*,
                 u.name AS moderator_name,
                 COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count,
                 -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
                 sm.id AS schedule_id,
+                sm.calendar_event_id,
                 sm.client_name,
                 sm.status AS schedule_status
             FROM meetings m
