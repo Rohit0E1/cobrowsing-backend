@@ -25,6 +25,11 @@ async function isAvailable() {
     return available;
 }
 
+/** Questions about email ("what did I email Rahul", "inbox", "ईमेल") rank emails ahead of near-equal notes. */
+const EMAIL_WORDS = /\b(e-?mails?|e-?mailed|mailed|inbox)\b|ईमेल|मेल/i;
+const asksAboutEmail = (query) => EMAIL_WORDS.test(query);
+const EMAIL_BOOST = 0.1; // on cosine distance; a clearly closer note still wins
+
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const toVector = (values) => `[${values.join(',')}]`;
 
@@ -114,6 +119,30 @@ async function collect(scope) {
         return { tenantId: rows[0].tenant_id, clientId: Number(id), meetingUuid: null, items };
     }
 
+    if (kind === 'assistant') {
+        // scope = assistant:<userId>:<sessionId> (the session id may itself contain ':')
+        const [, userId, ...session] = scope.split(':');
+        const { rows } = await pool.query(
+            `SELECT tenant_id, role, text, created_at FROM assistant_messages
+             WHERE user_id = $1 AND session_id = $2 ORDER BY created_at, id`,
+            [Number(userId), session.join(':')],
+        );
+        if (!rows.length) return null;
+        const transcript = rows
+            .filter(worthRemembering)
+            .map((r) => `${r.role === 'advisor' ? 'Advisor' : 'Assistant'}: ${r.text}`)
+            .join('\n');
+        const header = `Your conversation with the assistant on ${day(rows[0].created_at)}:`;
+        return {
+            tenantId: rows[0].tenant_id,
+            clientId: null,
+            meetingUuid: null,
+            ownerUserId: Number(userId), // private to that advisor
+            occurredAt: rows[0].created_at,
+            items: chunkText(transcript).map((text, i) => ({ source: 'assistant', sourceId: `${session.join(':')}#${i}`, text, header })),
+        };
+    }
+
     throw new Error(`Unknown knowledge scope ${scope}`);
 }
 
@@ -121,9 +150,28 @@ async function collect(scope) {
  * Re-indexes one scope ("meeting:<uuid>" or "client:<id>") to match the database. Chunks whose text is
  * unchanged keep their embedding, so a small edit only embeds what changed.
  */
+const ADVISOR_QUESTION_RE = /\?\s*$|^\s*(what|who|whom|when|where|which|why|how|did)\b/i;
+const NOTHING_FOUND_RE = /\b(no record|don'?t have (that|a record|any)|couldn'?t find|can'?t (see|find|tell)|not sure|nothing (on|found))\b/i;
+
+/**
+ * A line of an assistant conversation worth searching later. The advisor's questions and the assistant's
+ * "I have no record of that" carry no facts, and they outrank the line that does: asking "what budget did I
+ * mention?" three times would bury "she wants a 3 BHK under 2 crore".
+ */
+function worthRemembering({ role, text }) {
+    return role === 'advisor' ? !ADVISOR_QUESTION_RE.test(text) : !NOTHING_FOUND_RE.test(text);
+}
+
 async function reindex(scope) {
     if (!(await isAvailable())) return { scope, skipped: 'knowledge search is not set up' };
-    const found = await collect(scope);
+    return store(scope, await collect(scope));
+}
+
+/**
+ * Replaces a scope's chunks with `found.items` ({ source, sourceId, text, header }). `ownerUserId` makes them
+ * private to that advisor (emails); `occurredAt` dates them when no meeting does. `found` null clears the scope.
+ */
+async function store(scope, found) {
 
     const { rows: existing } = await pool.query(
         'SELECT content_hash, embedding::text AS embedding FROM knowledge_chunks WHERE scope = $1',
@@ -145,9 +193,13 @@ async function reindex(scope) {
         await client.query('DELETE FROM knowledge_chunks WHERE scope = $1', [scope]);
         for (const item of items) {
             await client.query(
-                `INSERT INTO knowledge_chunks (tenant_id, scope, source, source_id, client_id, meeting_uuid, text, content_hash, embedding)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)`,
-                [found.tenantId, scope, item.source, item.sourceId, found.clientId, found.meetingUuid, item.text, item.hash, known.get(item.hash)],
+                `INSERT INTO knowledge_chunks
+                   (tenant_id, scope, source, source_id, client_id, meeting_uuid, text, content_hash, embedding, owner_user_id, occurred_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector, $10, $11)`,
+                [
+                    found.tenantId, scope, item.source, item.sourceId, found.clientId, found.meetingUuid, item.text, item.hash,
+                    known.get(item.hash), found.ownerUserId ?? null, found.occurredAt ?? null,
+                ],
             );
         }
         await client.query('COMMIT');
@@ -175,31 +227,41 @@ function queue(scope) {
     return next;
 }
 
-/** The chunks closest in meaning to the question, within one tenant and optionally one client. */
-async function search({ tenantId, query, clientId = null, limit = 5 }) {
+/**
+ * The chunks closest in meaning to the question, within one tenant and optionally one client. Private chunks
+ * (an advisor's emails and assistant conversations) only show to their owner, `userId`.
+ */
+async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
     if (!(await isAvailable())) throw Object.assign(new Error('Knowledge search is not set up'), { status: 503 });
     const [vector] = await embed([query], 'RETRIEVAL_QUERY');
     // shortcut: exact scan, no vector index; fine for thousands of chunks per tenant. Add an HNSW index
     // (with pgvector 0.8 iterative scans, so the tenant filter still returns enough rows) past ~100k chunks.
     const { rows } = await pool.query(
         `SELECT k.source, k.text, 1 - (k.embedding <=> $2::vector) AS score,
-                c.name AS client, m.start_time AS meeting_time, k.meeting_uuid
+                c.name AS client, COALESCE(m.start_time, k.occurred_at) AS happened_at, k.meeting_uuid
          FROM knowledge_chunks k
          LEFT JOIN clients c ON c.id = k.client_id
          LEFT JOIN meetings m ON m.uuid = k.meeting_uuid
-         WHERE k.tenant_id = $1 AND ($3::int IS NULL OR k.client_id = $3)
-         ORDER BY k.embedding <=> $2::vector
+         WHERE k.tenant_id = $1
+           AND ($3::int IS NULL OR k.client_id = $3
+                -- The advisor's talks with the assistant belong to no client: count those that mention this one.
+                OR (k.source = 'assistant' AND k.text ILIKE '%' || (SELECT split_part(name, ' ', 1) FROM clients WHERE id = $3) || '%'))
+           AND (k.owner_user_id IS NULL OR k.owner_user_id = $5)
+         ORDER BY (k.embedding <=> $2::vector) - CASE WHEN $6 AND k.source = 'email' THEN $7::float ELSE 0 END
          LIMIT $4`,
-        [tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20)],
+        [
+            tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20), userId ?? null,
+            asksAboutEmail(query), EMAIL_BOOST,
+        ],
     );
     return rows.map((r) => ({
         source: r.source,
         client: r.client,
-        date: r.meeting_time ? day(r.meeting_time) : null,
+        date: r.happened_at ? day(r.happened_at) : null,
         meetingUuid: r.meeting_uuid,
         score: Number(Number(r.score).toFixed(3)),
         text: r.text,
     }));
 }
 
-module.exports = { queue, reindex, search, chunkText, isAvailable };
+module.exports = { queue, reindex, store, search, chunkText, isAvailable, asksAboutEmail, worthRemembering };

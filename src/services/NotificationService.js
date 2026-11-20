@@ -94,7 +94,9 @@ async function sendEmail(to, subject, html, attachments, cc) {
         console.log('[EMAIL DUMMY] Body preview:', html.replace(/<[^>]+>/g, '').slice(0, 120));
         return { dummy: true };
     }
-    return transport.sendMail({ from: EMAIL_FROM, to, cc: ccAddr, subject, html, attachments });
+    const info = await transport.sendMail({ from: EMAIL_FROM, to, cc: ccAddr, subject, html, attachments });
+    console.log(`[EMAIL] Sent "${subject}" with ${attachments.length} attachment(s), id ${info.messageId}`);
+    return info;
 }
 
 const WA_API_KEY = process.env.WA_API_KEY;
@@ -209,7 +211,8 @@ function buildEmailHtml({ headerColor, headerLabel, clientName, dateStr, endStr,
 </html>`;
 }
 
-async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomLink, meetingUid, salesperson) {
+/** `calendarFile: false` when the advisor's own Google Calendar already sent the client a real invite. */
+async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomLink, meetingUid, salesperson, { calendarFile = true } = {}) {
     const start = new Date(startTime);
     const end = new Date(start.getTime() + 3600000);
     const dateStr = start.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -224,7 +227,9 @@ async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomL
         endStr,
         roomLink,
         bodyText: 'You have been invited to a meeting. Please find the details below and add the calendar invite to your schedule.',
-        noteText: 'A calendar file (.ics) is attached — open it to add this meeting to your calendar.'
+        noteText: calendarFile
+            ? 'A calendar file (.ics) is attached — open it to add this meeting to your calendar.'
+            : 'A calendar invitation has also been sent to you separately — accept it to add this meeting to your calendar.'
     });
 
     const attachment = icsAttachment(
@@ -234,7 +239,7 @@ async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomL
         clientEmail, clientName, salesperson
     );
 
-    await sendEmail(clientEmail, 'You have been invited to a meeting — Mandake Group', html, [attachment], salesperson && salesperson.email);
+    await sendEmail(clientEmail, 'You have been invited to a meeting — Mandake Group', html, calendarFile ? [attachment] : [], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_invite_v2', [
         safeName(clientName),
@@ -243,7 +248,11 @@ async function sendInvite(clientEmail, clientName, clientPhone, startTime, roomL
     ]).catch(e => console.error('[WHATSAPP] Invite send failed:', e.message));
 }
 
-async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime, roomLink, meetingUid, salesperson) {
+/**
+ * `calendarFile: false` when the advisor's Google invite was moved. `replacesInvite: true` when it could not be
+ * (the client's old Google entry is stale), so the email tells them to use the attached file instead.
+ */
+async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime, roomLink, meetingUid, salesperson, { calendarFile = true, replacesInvite = false } = {}) {
     const start = new Date(newStartTime);
     const end = new Date(start.getTime() + 3600000);
     const dateStr = start.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -258,7 +267,11 @@ async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime
         endStr,
         roomLink,
         bodyText: 'Your meeting has been rescheduled. Please find the updated details below and add the new calendar invite to your schedule.',
-        noteText: 'A new calendar file (.ics) is attached — open it to update this meeting in your calendar.'
+        noteText: !calendarFile
+            ? 'Your calendar invitation has been updated to the new time.'
+            : replacesInvite
+                ? 'We could not update your earlier calendar invitation. Please delete the old entry from your calendar and open the attached file (.ics) to add the new time.'
+                : 'A new calendar file (.ics) is attached — open it to update this meeting in your calendar.'
     });
 
     const attachment = icsAttachment(
@@ -268,7 +281,7 @@ async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime
         clientEmail, clientName, salesperson
     );
 
-    await sendEmail(clientEmail, 'Your meeting has been rescheduled — Mandake Group', html, [attachment], salesperson && salesperson.email);
+    await sendEmail(clientEmail, 'Your meeting has been rescheduled — Mandake Group', html, calendarFile ? [attachment] : [], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_reschedule_v2', [
         safeName(clientName),
@@ -277,7 +290,7 @@ async function sendReschedule(clientEmail, clientName, clientPhone, newStartTime
     ]).catch(e => console.error('[WHATSAPP] Reschedule send failed:', e.message));
 }
 
-async function sendCancellation(clientEmail, clientName, clientPhone, startTime, meetingUid, salesperson) {
+async function sendCancellation(clientEmail, clientName, clientPhone, startTime, meetingUid, salesperson, { calendarFile = true, replacesInvite = false } = {}) {
     const start = startTime ? new Date(startTime) : new Date();
     const end = new Date(start.getTime() + 3600000);
     const uid = meetingUid || ('meet-' + Date.now());
@@ -300,7 +313,7 @@ async function sendCancellation(clientEmail, clientName, clientPhone, startTime,
           <td style="padding:36px 40px 28px;">
             <p style="margin:0 0 8px;font-size:16px;color:#2c2c2c;">Dear <strong>${esc(clientName)}</strong>,</p>
             <p style="margin:0 0 24px;font-size:14px;color:#666666;line-height:1.7;">We regret to inform you that your scheduled meeting has been <strong>cancelled</strong>.</p>
-            <p style="margin:0;font-size:14px;color:#666666;line-height:1.7;">Please contact us to reschedule at your convenience. We apologise for any inconvenience caused.</p>
+            <p style="margin:0;font-size:14px;color:#666666;line-height:1.7;">Please contact us to reschedule at your convenience. We apologise for any inconvenience caused.</p>${replacesInvite ? '\n            <p style="margin:16px 0 0;font-size:14px;color:#666666;line-height:1.7;">Please also delete this meeting from your calendar; we could not remove the invitation automatically.</p>' : ''}
           </td>
         </tr>
         <tr><td style="height:1px;background:#e8ddd0;"></td></tr>
@@ -318,7 +331,7 @@ async function sendCancellation(clientEmail, clientName, clientPhone, startTime,
 
     const attachment = icsAttachment('CANCEL', 2, uid, start, end, EVENT_TITLE, 'This meeting has been cancelled.', clientEmail, clientName, salesperson);
 
-    await sendEmail(clientEmail, 'Your meeting has been cancelled — Mandake Group', html, [attachment], salesperson && salesperson.email);
+    await sendEmail(clientEmail, 'Your meeting has been cancelled — Mandake Group', html, calendarFile ? [attachment] : [], salesperson && salesperson.email);
 
     sendWhatsAppTemplate(clientPhone, 'mandake-group_cancel_v2', [
         safeName(clientName)
