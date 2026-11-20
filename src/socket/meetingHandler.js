@@ -1,3 +1,4 @@
+const jwt = require("jsonwebtoken");
 const MeetingService = require("../services/MeetingService");
 const { canModerate } = require("../middleware/auth");
 const RoomState = require("../state/RoomState");
@@ -26,10 +27,23 @@ async function finalizeSession(io, uuid, reason) {
     io.to(uuid).emit("session-ended", { roomId: uuid, reason });
 }
 
+async function joinAsRecorder(socket, uuid, key) {
+    try {
+        const claims = jwt.verify(String(key || ""), process.env.JWT_SECRET);
+        if (claims.typ !== "recorder" || claims.uuid !== uuid) return;
+    } catch {
+        return;
+    }
+    socket.join(uuid);
+    const state = RoomState.getState(uuid) || (await MeetingService.recoverState(uuid).catch(() => null))?.state;
+    if (state?.currentUrl) socket.emit("urlChange", { src: state.currentUrl, isRecovered: true });
+}
+
 module.exports = (io, socket) => {
 
-    socket.on("join-meeting", async ({ meetingId: uuid, role, name, mobile, token }) => {
+    socket.on("join-meeting", async ({ meetingId: uuid, role, name, mobile, key, token }) => {
         if (!uuid) return;
+        if (role === "recorder") return joinAsRecorder(socket, uuid, key);
 
         // The moderator role carries real powers (ending the session, teardown on leave), so it needs the
         // advisor's login token for this meeting's tenant, as the HTTP moderator check does.
