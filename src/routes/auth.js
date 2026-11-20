@@ -23,8 +23,12 @@ router.post("/register", async (req, res) => {
     }
 });
 
+// As long as the frontend's login cookies (7 days, or 1 day without "remember me"). A token that expired first left
+// the app looking signed in while every call failed with 401 (2026-11-20, tokens were 10 h).
+const loginLifetime = (rememberMe) => (rememberMe === false ? "1d" : "7d");
+
 router.post("/login", async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
     if (!email || !password) {
         return res.status(400).json({ status: "error", message: "Email and password are required" });
     }
@@ -35,7 +39,7 @@ router.post("/login", async (req, res) => {
         const match = await UserService.verifyPassword(password, user.password_hash);
         if (!match) return res.status(401).json({ status: "error", message: "Invalid email or password" });
 
-        const token = jwt.sign({ id: user.id, email: user.email, tenant_id: user.tenant_id }, process.env.JWT_SECRET, { expiresIn: "10h" });
+        const token = jwt.sign({ id: user.id, email: user.email, tenant_id: user.tenant_id }, process.env.JWT_SECRET, { expiresIn: loginLifetime(rememberMe) });
         const { password_hash, ...safeUser } = user;
         res.json({ status: "success", token, user: safeUser });
     } catch (err) {
@@ -62,7 +66,10 @@ router.post("/switch-tenant", verifyToken, async (req, res) => {
         const tenant = await TenantService.getForMember(req.user.id, tenantId);
         if (!tenant) return res.status(403).json({ status: "error", message: "You do not have access to this tenant" });
 
-        const token = jwt.sign({ id: req.user.id, email: req.user.email, tenant_id: tenant.id }, process.env.JWT_SECRET, { expiresIn: "10h" });
+        // Same expiry as the token they switched with: switching tenant never extends a session.
+        const token = req.user.exp
+            ? jwt.sign({ id: req.user.id, email: req.user.email, tenant_id: tenant.id, exp: req.user.exp }, process.env.JWT_SECRET)
+            : jwt.sign({ id: req.user.id, email: req.user.email, tenant_id: tenant.id }, process.env.JWT_SECRET, { expiresIn: loginLifetime(false) });
         res.json({ status: "success", token, tenant });
     } catch (err) {
         res.status(500).json({ status: "error", message: "Failed to switch tenant" });
