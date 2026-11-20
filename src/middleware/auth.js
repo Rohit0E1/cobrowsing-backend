@@ -20,7 +20,7 @@ async function userFromToken(token) {
         tenantId = row.rows[0]?.tenant_id;
         if (!Number.isInteger(tenantId)) return null;
     }
-    return { id: decoded.id, email: decoded.email, tenantId };
+    return { id: decoded.id, email: decoded.email, tenantId, exp: decoded.exp };
 }
 
 /** The bearer token from an Authorization header, if any. */
