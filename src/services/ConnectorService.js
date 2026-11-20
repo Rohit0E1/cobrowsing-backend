@@ -73,6 +73,8 @@ async function sessionFor(user, { approvals = true } = {}) {
 const SETTINGS = {
     defaultCalendarId: (v) => typeof v === 'string' && v.length <= 200,
     emailSignature: (v) => typeof v === 'string' && v.length <= 1000,
+    // Let the assistant search the advisor's emails with clients (EmailKnowledgeService). Off unless set.
+    readEmail: (v) => typeof v === 'boolean',
 };
 
 function cleanSettings(input) {
@@ -81,7 +83,7 @@ function cleanSettings(input) {
     for (const [key, valid] of Object.entries(SETTINGS)) {
         if (input[key] === undefined) continue;
         if (!valid(input[key])) throw http(400, `Invalid ${key}`);
-        out[key] = input[key].trim();
+        out[key] = typeof input[key] === 'string' ? input[key].trim() : input[key];
     }
     return out;
 }
