@@ -5,6 +5,20 @@ const AdvisorCalendarService = require('./AdvisorCalendarService');
 const MeetingService = require('./MeetingService');
 const ClientService = require('./ClientService');
 const ProjectService = require('./ProjectService');
+const ClientActivityService = require('./ClientActivityService');
+
+/** Puts a booking change on the client's activity timeline. Best effort: the timeline never fails a booking. */
+function logBooking(meeting, type, title, createdBy, at = meeting && meeting.start_time) {
+    if (!meeting || !meeting.client_id) return;
+    const when = new Date(at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    ClientActivityService.log(meeting.client_id, {
+        type,
+        title,
+        description: `${title} for ${when}`,
+        meta: { scheduled_meeting_id: meeting.id, start_time: at },
+        createdBy: createdBy || null,
+    }).catch(e => console.error('[SCHEDULE] Activity log failed:', e.message));
+}
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -140,6 +154,8 @@ const SchedulingService = {
             meeting.room_link = roomLink;
         }
 
+        logBooking(meeting, 'presentation_scheduled', 'Presentation scheduled', createdBy);
+
         NotificationService.sendInvite(meeting.client_email, meeting.client_name, meeting.client_phone, start, roomLink, icalUid, salesperson, { calendarFile: !advisorCalendarId }).catch(e =>
             console.error('[SCHEDULE] Notification failed:', e.message)
         );
@@ -217,6 +233,7 @@ const SchedulingService = {
             { calendarFile: !advisorMoved, replacesInvite: staleInvite }
         ).catch(e => console.error('[RESCHEDULE] Notification failed:', e.message));
         if (staleInvite) updated.calendar_warning = STALE_INVITE_WARNING;
+        logBooking(updated, 'presentation_rescheduled', 'Presentation rescheduled', userId);
 
         return updated;
     },
@@ -262,6 +279,7 @@ const SchedulingService = {
         }
 
         const updated = res.rows[0];
+        logBooking(updated, 'presentation_cancelled', 'Presentation cancelled', userId, existing.start_time);
         const salesperson = await getSalesperson(userId);
         const icalUid = existing.meeting_uuid ? buildIcalUid(existing.meeting_uuid) : null;
         const staleInvite = Boolean(existing.advisor_calendar_id) && !advisorCancelled;

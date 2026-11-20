@@ -30,3 +30,16 @@ test("cleanBody stops at a forwarded original and caps length", () => {
     assert.strictEqual(cleanBody("x".repeat(7000)).length, 6000);
     assert.strictEqual(cleanBody(null), "");
 });
+
+const { windows } = require("../src/services/EmailKnowledgeService");
+
+test("windows cover since..now in order with no gaps, the last one cut at now", () => {
+    const since = new Date("2026-06-01T00:00:00Z");
+    const now = new Date("2026-06-20T12:00:00Z");
+    const w = windows(since, now, 7);
+    assert.strictEqual(w.length, 3);
+    assert.strictEqual(w[0][0].getTime(), since.getTime());
+    for (let i = 1; i < w.length; i++) assert.strictEqual(w[i][0].getTime(), w[i - 1][1].getTime());
+    assert.strictEqual(w.at(-1)[1].getTime(), now.getTime());
+    assert.deepStrictEqual(windows(now, now, 7), []);
+});
