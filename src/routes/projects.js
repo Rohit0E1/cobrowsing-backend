@@ -1,9 +1,11 @@
 const express = require("express");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, requireRole, TEAM_ADMIN_ROLES } = require("../middleware/auth");
 const ProjectService = require("../services/ProjectService");
 const UserService = require("../services/UserService");
 
 const router = express.Router();
+
+const canManage = requireRole(...TEAM_ADMIN_ROLES, "manager");
 
 const VALID_STATUSES = ["active", "archived"];
 
@@ -42,7 +44,7 @@ router.get("/", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/", verifyToken, async (req, res) => {
+router.post("/", verifyToken, canManage, async (req, res) => {
     try {
         const validationError = validateProjectBody(req.body);
         if (validationError) return res.status(400).json({ error: validationError });
@@ -71,7 +73,7 @@ router.get("/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.put("/:id", verifyToken, async (req, res) => {
+router.put("/:id", verifyToken, canManage, async (req, res) => {
     try {
         const validationError = validateProjectBody(req.body, { partial: true });
         if (validationError) return res.status(400).json({ error: validationError });
@@ -91,7 +93,7 @@ router.put("/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.delete("/:id", verifyToken, async (req, res) => {
+router.delete("/:id", verifyToken, canManage, async (req, res) => {
     try {
         const removed = await ProjectService.remove(req.user.tenantId, req.params.id);
         if (!removed) return res.status(404).json({ error: "Project not found" });

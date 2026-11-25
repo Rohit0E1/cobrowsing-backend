@@ -20,6 +20,7 @@ async function finalizeSession(io, uuid, reason) {
     try {
         if (meetingPk) await AnalyticsService.summarize(meetingPk);
     } catch (_) {}
+    if (meetingPk) MeetingService.markSessionEnded(meetingPk).catch(() => {});
     try {
         await MeetingService.reset(uuid);
     } catch (_) {}
@@ -95,6 +96,7 @@ module.exports = (io, socket) => {
 
         const meetingPk = RoomState.getMeetingPk(uuid);
         if (meetingPk) {
+            MeetingService.markSessionStarted(meetingPk).catch(() => {});
             MeetingService.registerParticipant(meetingPk, socket.id, displayName, mobile || "", role)
                 .catch(() => {});
         }

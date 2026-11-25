@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const ClientActivityService = require('./ClientActivityService');
+const { ownsClient } = require('./AccessScope');
 
 const VALID_STATUSES = ['Active', 'Pending', 'Completed'];
 const VALID_DEAL_STAGES = ['inquiry', 'vsv_scheduled', 'vsv_done', 'offer', 'negotiation', 'closed_won', 'closed_lost'];
@@ -11,14 +12,14 @@ function validateId(id) {
 }
 
 const ClientService = {
-    async getAll(tenantId) {
-        const res = await pool.query('SELECT * FROM clients WHERE tenant_id = $1 ORDER BY id DESC', [tenantId]);
+    async getAll(tenantId, owner = null) {
+        const res = await pool.query(`SELECT * FROM clients WHERE tenant_id = $1 AND ${ownsClient('$2')} ORDER BY id DESC`, [tenantId, owner]);
         return res.rows;
     },
 
-    async belongsTo(tenantId, id) {
+    async belongsTo(tenantId, id, owner = null) {
         const cid = validateId(id);
-        const res = await pool.query('SELECT 1 FROM clients WHERE id = $1 AND tenant_id = $2', [cid, tenantId]);
+        const res = await pool.query(`SELECT 1 FROM clients WHERE id = $1 AND tenant_id = $2 AND ${ownsClient('$3')}`, [cid, tenantId, owner]);
         return res.rowCount > 0;
     },
 
@@ -42,12 +43,12 @@ const ClientService = {
         return { ...client, notes: notesRes.rows, activities: activitiesRes.rows };
     },
 
-    async findByEmail(tenantId, email) {
+    async findByEmail(tenantId, email, owner = null) {
         const target = email ? String(email).trim().toLowerCase() : '';
         if (!target) return null;
         const res = await pool.query(
-            'SELECT * FROM clients WHERE tenant_id = $1 AND LOWER(email) = $2 ORDER BY id DESC LIMIT 1',
-            [tenantId, target]
+            `SELECT * FROM clients WHERE tenant_id = $1 AND LOWER(email) = $2 AND ${ownsClient('$3')} ORDER BY id DESC LIMIT 1`,
+            [tenantId, target, owner]
         );
         return res.rows[0] || null;
     },
@@ -119,8 +120,14 @@ const ClientService = {
         return created;
     },
 
-    async upsertByContact(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }) {
+    async upsertByContact(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting }, owner = null) {
         const existing = await this.findDuplicate(tenantId, { email, phone });
+        if (existing && owner != null && existing.client.created_by !== owner && existing.client.assigned_advisor_id !== String(owner)) {
+            const err = new Error(`A client with this ${existing.field} already exists`);
+            err.status = 409;
+            err.code = existing.field === 'email' ? 'DUPLICATE_EMAIL' : 'DUPLICATE_PHONE';
+            throw err;
+        }
         if (existing) return { client: existing.client, reused: true };
         try {
             const client = await this.create(tenantId, createdBy, { name, email, phone, city, status, deal_stage, lead_source, assigned_advisor_id, last_meeting });

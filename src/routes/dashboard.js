@@ -1,5 +1,5 @@
 const express = require("express");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, scopeOwner } = require("../middleware/auth");
 const DashboardService = require("../services/DashboardService");
 
 const router = express.Router();
@@ -48,12 +48,12 @@ function handle(name, fn) {
     };
 }
 
-router.get("/summary", verifyToken, handle("summary", (req, tr) => DashboardService.summary(req.user.tenantId, tr)));
-router.get("/funnel", verifyToken, handle("funnel", (req, tr) => DashboardService.funnel(req.user.tenantId, tr)));
-router.get("/lead-sources", verifyToken, handle("lead-sources", (req, tr) => DashboardService.leadSources(req.user.tenantId, tr)));
-router.get("/cities", verifyToken, handle("cities", (req, tr) => DashboardService.cities(req.user.tenantId, tr)));
-router.get("/advisors", verifyToken, handle("advisors", (req, tr) => DashboardService.advisors(req.user.tenantId, tr)));
-router.get("/meetings", verifyToken, handle("meetings", (req, tr) => DashboardService.meetings(req.user.tenantId, tr)));
+router.get("/summary", verifyToken, handle("summary", (req, tr) => DashboardService.summary(req.user.tenantId, scopeOwner(req.user), tr)));
+router.get("/funnel", verifyToken, handle("funnel", (req, tr) => DashboardService.funnel(req.user.tenantId, scopeOwner(req.user), tr)));
+router.get("/lead-sources", verifyToken, handle("lead-sources", (req, tr) => DashboardService.leadSources(req.user.tenantId, scopeOwner(req.user), tr)));
+router.get("/cities", verifyToken, handle("cities", (req, tr) => DashboardService.cities(req.user.tenantId, scopeOwner(req.user), tr)));
+router.get("/advisors", verifyToken, handle("advisors", (req, tr) => DashboardService.advisors(req.user.tenantId, scopeOwner(req.user), tr)));
+router.get("/meetings", verifyToken, handle("meetings", (req, tr) => DashboardService.meetings(req.user.tenantId, scopeOwner(req.user), tr)));
 router.get("/activities", verifyToken, async (req, res) => {
     try {
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
@@ -63,12 +63,12 @@ router.get("/activities", verifyToken, async (req, res) => {
             return res.status(400).json({ error: `type must be one of: ${DashboardService.ACTIVITY_TYPES.join(", ")}` });
         }
         const timeRange = parseTimeRange(req);
-        res.json(await DashboardService.activities(req.user.tenantId, limit, timeRange, { type, offset: (page - 1) * limit }));
+        res.json(await DashboardService.activities(req.user.tenantId, scopeOwner(req.user), limit, timeRange, { type, offset: (page - 1) * limit }));
     } catch (err) {
         console.error("[DASHBOARD] activities error:", err);
         res.status(500).json({ error: "Failed to load activities" });
     }
 });
-router.get("/insights", verifyToken, handle("insights", (req, tr) => DashboardService.insights(req.user.tenantId, tr)));
+router.get("/insights", verifyToken, handle("insights", (req, tr) => DashboardService.insights(req.user.tenantId, scopeOwner(req.user), tr)));
 
 module.exports = router;

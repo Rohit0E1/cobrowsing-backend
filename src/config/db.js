@@ -294,6 +294,11 @@ const initDb = async () => {
             -- When the advisor's email was last indexed for knowledge search (NULL: never, or forgotten).
             ALTER TABLE connector_settings ADD COLUMN IF NOT EXISTS email_synced_at TIMESTAMPTZ;
 
+            ALTER TABLE user_tenants ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'admin';
+            ALTER TABLE user_tenants ALTER COLUMN role SET DEFAULT 'consultant';
+
+            ALTER TABLE meetings ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+
             DROP INDEX IF EXISTS uq_clients_email;
             DROP INDEX IF EXISTS uq_clients_phone;
             DROP INDEX IF EXISTS idx_clients_email_unique;

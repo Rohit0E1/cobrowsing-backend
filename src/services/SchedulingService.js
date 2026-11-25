@@ -19,6 +19,8 @@ function logBooking(meeting, type, title, createdBy, at = meeting && meeting.sta
         createdBy: createdBy || null,
     }).catch(e => console.error('[SCHEDULE] Activity log failed:', e.message));
 }
+const { scopeOwner } = require('../middleware/auth');
+const { ownsSchedule } = require('./AccessScope');
 
 function validateId(id) {
     const n = parseInt(id, 10);
@@ -60,7 +62,7 @@ function inviteDescription(salesperson, roomLink) {
 }
 
 const SchedulingService = {
-    async schedule(tenantId, createdBy, { client_name, client_email, client_phone, client_city, project_id, start_time }) {
+    async schedule(tenantId, createdBy, owner, { client_name, client_email, client_phone, client_city, project_id, start_time }) {
         const start = new Date(start_time);
         if (isNaN(start.getTime())) throw new Error('Invalid start_time');
         if (start <= new Date()) throw new Error('start_time must be in the future');
@@ -73,7 +75,7 @@ const SchedulingService = {
             email: client_email,
             phone: client_phone,
             city: client_city
-        });
+        }, owner);
 
         let meeting;
         try {
@@ -163,11 +165,11 @@ const SchedulingService = {
         return meeting;
     },
 
-    async reschedule(id, userId, { start_time }) {
+    async reschedule(id, user, { start_time }) {
         const safeId = validateId(id);
         const row = await pool.query(
-            'SELECT * FROM scheduled_meetings WHERE id = $1 AND created_by = $2',
-            [safeId, userId]
+            `SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2 AND ${ownsSchedule('$3')}`,
+            [safeId, user.tenantId, scopeOwner(user)]
         );
         if (!row.rows[0]) return null;
         const existing = row.rows[0];
@@ -185,12 +187,12 @@ const SchedulingService = {
             ? (process.env.APP_URL || 'http://localhost:3000') + '/participant/' + existingUuid
             : null;
 
-        const salesperson = await getSalesperson(userId);
+        const salesperson = await getSalesperson(existing.created_by || user.id);
         let newCalendarId = existing.calendar_event_id;
         let advisorMoved = false;
         if (existing.advisor_calendar_id) {
             try {
-                await withRetry(() => AdvisorCalendarService.moveInvite({ id: userId }, {
+                await withRetry(() => AdvisorCalendarService.moveInvite({ id: existing.created_by || user.id }, {
                     calendarId: existing.advisor_calendar_id,
                     eventId: existing.calendar_event_id,
                     start,
@@ -217,8 +219,8 @@ const SchedulingService = {
         const res = await pool.query(
             `UPDATE scheduled_meetings
              SET start_time = $1, end_time = $2, status = 'rescheduled', calendar_event_id = $3, updated_at = NOW()
-             WHERE id = $4 AND created_by = $5 RETURNING *`,
-            [start, end, newCalendarId, safeId, userId]
+             WHERE id = $4 RETURNING *`,
+            [start, end, newCalendarId, safeId]
         );
 
         const updated = res.rows[0];
@@ -233,16 +235,16 @@ const SchedulingService = {
             { calendarFile: !advisorMoved, replacesInvite: staleInvite }
         ).catch(e => console.error('[RESCHEDULE] Notification failed:', e.message));
         if (staleInvite) updated.calendar_warning = STALE_INVITE_WARNING;
-        logBooking(updated, 'presentation_rescheduled', 'Presentation rescheduled', userId);
+        logBooking(updated, 'presentation_rescheduled', 'Presentation rescheduled', user.id);
 
         return updated;
     },
 
-    async cancel(id, userId) {
+    async cancel(id, user) {
         const safeId = validateId(id);
         const row = await pool.query(
-            'SELECT * FROM scheduled_meetings WHERE id = $1 AND created_by = $2',
-            [safeId, userId]
+            `SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2 AND ${ownsSchedule('$3')}`,
+            [safeId, user.tenantId, scopeOwner(user)]
         );
         if (!row.rows[0]) return null;
         const existing = row.rows[0];
@@ -252,7 +254,7 @@ const SchedulingService = {
         let advisorCancelled = false;
         if (existing.advisor_calendar_id && existing.calendar_event_id) {
             try {
-                await withRetry(() => AdvisorCalendarService.cancelInvite({ id: userId }, {
+                await withRetry(() => AdvisorCalendarService.cancelInvite({ id: existing.created_by || user.id }, {
                     calendarId: existing.advisor_calendar_id,
                     eventId: existing.calendar_event_id
                 }));
@@ -269,8 +271,8 @@ const SchedulingService = {
         const res = await pool.query(
             `UPDATE scheduled_meetings
              SET status = 'cancelled', updated_at = NOW()
-             WHERE id = $1 AND created_by = $2 RETURNING *`,
-            [safeId, userId]
+             WHERE id = $1 RETURNING *`,
+            [safeId]
         );
         // Close the presentation room too, so it no longer counts as upcoming or live anywhere.
         // (Joining by link does not check is_active; blocking that is a separate change.)
@@ -279,8 +281,8 @@ const SchedulingService = {
         }
 
         const updated = res.rows[0];
-        logBooking(updated, 'presentation_cancelled', 'Presentation cancelled', userId, existing.start_time);
-        const salesperson = await getSalesperson(userId);
+        logBooking(updated, 'presentation_cancelled', 'Presentation cancelled', user.id, existing.start_time);
+        const salesperson = await getSalesperson(existing.created_by || user.id);
         const icalUid = existing.meeting_uuid ? buildIcalUid(existing.meeting_uuid) : null;
         const staleInvite = Boolean(existing.advisor_calendar_id) && !advisorCancelled;
         NotificationService.sendCancellation(
@@ -292,54 +294,54 @@ const SchedulingService = {
         return updated;
     },
 
-    async resend(id, tenantId, userId, { mode } = {}) {
+    async resend(id, user, { mode } = {}) {
         const safeId = validateId(id);
         const row = await pool.query(
-            'SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2',
-            [safeId, tenantId]
+            `SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2 AND ${ownsSchedule('$3')}`,
+            [safeId, user.tenantId, scopeOwner(user)]
         );
         const existing = row.rows[0];
         if (!existing) return null;
         if (existing.status === 'cancelled') throw new Error('Cannot resend a cancelled meeting');
         if (!existing.meeting_uuid) throw new Error('Invalid meeting: no session room');
 
-        const roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + existing.meeting_uuid;
+        const roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant/' + existing.meeting_uuid;
         const icalUid = buildIcalUid(existing.meeting_uuid);
-        const salesperson = await getSalesperson(userId);
+        const salesperson = await getSalesperson(existing.created_by || user.id);
         const send = mode === 'reschedule' ? NotificationService.sendReschedule : NotificationService.sendInvite;
         await send(existing.client_email, existing.client_name, existing.client_phone, existing.start_time, roomLink, icalUid, salesperson);
 
         return existing;
     },
 
-    async getAll(userId) {
+    async getAll(tenantId, owner) {
         const res = await pool.query(
             `SELECT sm.*, u.name AS created_by_name
              FROM scheduled_meetings sm
              LEFT JOIN users u ON sm.created_by = u.id
-             WHERE sm.created_by = $1
+             WHERE sm.tenant_id = $1 AND ${ownsSchedule('$2', 'sm.')}
              ORDER BY sm.start_time DESC`,
-            [userId]
+            [tenantId, owner]
         );
         return res.rows;
     },
 
-    async getById(id, userId) {
+    async getById(id, user) {
         const safeId = validateId(id);
         const res = await pool.query(
-            'SELECT * FROM scheduled_meetings WHERE id = $1 AND created_by = $2',
-            [safeId, userId]
+            `SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2 AND ${ownsSchedule('$3')}`,
+            [safeId, user.tenantId, scopeOwner(user)]
         );
         return res.rows[0] || null;
     },
 
-    async lookupCustomer(tenantId, { email, phone }) {
+    async lookupCustomer(tenantId, owner, { email, phone }) {
         const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
         const trimmedPhone = phone ? String(phone).trim() : null;
         if (!trimmedEmail && !trimmedPhone) return null;
 
         const conditions = [];
-        const params = [tenantId];
+        const params = [tenantId, owner];
         if (trimmedEmail) {
             params.push(trimmedEmail);
             conditions.push(`LOWER(client_email) = $${params.length}`);
@@ -354,7 +356,7 @@ const SchedulingService = {
                 client_name, client_email, client_phone, client_city, project_id,
                 MAX(created_at) OVER (PARTITION BY LOWER(client_email)) AS last_seen_at
              FROM scheduled_meetings
-             WHERE tenant_id = $1 AND (${conditions.join(' OR ')})
+             WHERE tenant_id = $1 AND ${ownsSchedule('$2')} AND (${conditions.join(' OR ')})
              ORDER BY LOWER(client_email), created_at DESC
              LIMIT 1`,
             params

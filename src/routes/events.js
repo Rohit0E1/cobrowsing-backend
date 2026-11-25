@@ -1,5 +1,5 @@
 const express = require("express");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, scopeOwner } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
 const EventService = require("../services/EventService");
 const { requireTenantMeeting } = require("../middleware/meetingAccess");
@@ -9,7 +9,7 @@ const router = express.Router();
 // Dashboard Stats
 router.get("/stats", verifyToken, async (req, res) => {
     try {
-        const stats = await EventService.getStats(req.user.tenantId);
+        const stats = await EventService.getStats(req.user.tenantId, scopeOwner(req.user));
         res.json(stats);
     } catch (err) {
         
@@ -20,7 +20,7 @@ router.get("/stats", verifyToken, async (req, res) => {
 // Real-time Activity Stream
 router.get("/live-stream", verifyToken, async (req, res) => {
     try {
-        const events = await EventService.getLiveStream(req.user.tenantId);
+        const events = await EventService.getLiveStream(req.user.tenantId, scopeOwner(req.user));
         res.json(events);
     } catch (err) {
         

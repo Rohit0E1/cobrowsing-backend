@@ -1,8 +1,9 @@
 const { pool } = require("../config/db");
+const { ownsMeeting } = require("./AccessScope");
 
 const EventService = {
     /** Single aggregation query replacing the 3 separate queries in the old /stats endpoint */
-    async getStats(tenantId) {
+    async getStats(tenantId, owner = null) {
         const res = await pool.query(`
             SELECT
                 COUNT(DISTINCT m.id) AS total,
@@ -12,8 +13,8 @@ const EventService = {
                 ) AS portfolio_views
             FROM meetings m
             LEFT JOIN events e ON e.meeting_id = m.id
-            WHERE m.tenant_id = $1
-        `, [tenantId]);
+            WHERE m.tenant_id = $1 AND ${ownsMeeting("$2", "m.")}
+        `, [tenantId, owner]);
         const row = res.rows[0];
         const total = parseInt(row.total) || 0;
         const engaged = parseInt(row.engaged_count) || 0;
@@ -52,15 +53,15 @@ const EventService = {
         };
     },
 
-    async getLiveStream(tenantId) {
+    async getLiveStream(tenantId, owner = null) {
         const res = await pool.query(`
             SELECT e.*, m.meeting_for
             FROM events e
             JOIN meetings m ON e.meeting_id = m.id
-            WHERE m.tenant_id = $1
+            WHERE m.tenant_id = $1 AND ${ownsMeeting("$2", "m.")}
             ORDER BY e.time DESC
             LIMIT 10
-        `, [tenantId]);
+        `, [tenantId, owner]);
         return res.rows;
     },
 

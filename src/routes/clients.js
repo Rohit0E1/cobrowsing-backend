@@ -1,5 +1,5 @@
 const express = require("express");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, requireRole, scopeOwner, WRITE_ROLES } = require("../middleware/auth");
 const ClientService = require("../services/ClientService");
 const ClientNoteService = require("../services/ClientNoteService");
 const ClientActivityService = require("../services/ClientActivityService");
@@ -8,6 +8,8 @@ const MeetingService = require("../services/MeetingService");
 const router = express.Router();
 
 router.use(verifyToken);
+
+const canWrite = requireRole(...WRITE_ROLES);
 
 function notePreview(body) {
     const trimmed = String(body).trim();
@@ -94,7 +96,7 @@ function normalizeBody(body, { partial = false } = {}) {
 
 router.param("id", async (req, res, next, id) => {
     try {
-        if (!(await ClientService.belongsTo(req.user.tenantId, id))) {
+        if (!(await ClientService.belongsTo(req.user.tenantId, id, scopeOwner(req.user)))) {
             return res.status(404).json({ error: "Client not found" });
         }
         next();
@@ -108,10 +110,10 @@ router.param("id", async (req, res, next, id) => {
 router.get("/", async (req, res) => {
     try {
         if (req.query.email) {
-            const match = await ClientService.findByEmail(req.user.tenantId, req.query.email);
+            const match = await ClientService.findByEmail(req.user.tenantId, req.query.email, scopeOwner(req.user));
             return res.json({ clients: match ? [match] : [], match: match || null });
         }
-        const clients = await ClientService.getAll(req.user.tenantId);
+        const clients = await ClientService.getAll(req.user.tenantId, scopeOwner(req.user));
         res.json({ clients });
     } catch (err) {
         console.error("[CLIENTS] getAll error:", err);
@@ -119,12 +121,12 @@ router.get("/", async (req, res) => {
     }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", canWrite, async (req, res) => {
     try {
         const validationError = validateClientBody(req.body);
         if (validationError) return res.status(400).json({ error: validationError });
 
-        const { client, reused } = await ClientService.upsertByContact(req.user.tenantId, req.user.id, normalizeBody(req.body));
+        const { client, reused } = await ClientService.upsertByContact(req.user.tenantId, req.user.id, normalizeBody(req.body), scopeOwner(req.user));
         res.status(reused ? 200 : 201).json({ ...client, reused });
     } catch (err) {
         if (err.code === 'DUPLICATE_EMAIL' || err.code === 'DUPLICATE_PHONE' || err.code === '23505') {
@@ -146,7 +148,7 @@ router.get("/:id", async (req, res) => {
     }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", canWrite, async (req, res) => {
     try {
         const validationError = validateClientBody(req.body, { partial: true });
         if (validationError) return res.status(400).json({ error: validationError });
@@ -164,7 +166,7 @@ router.put("/:id", async (req, res) => {
     }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", canWrite, async (req, res) => {
     try {
         const removed = await ClientService.remove(req.params.id);
         if (!removed) return res.status(404).json({ error: "Client not found" });
@@ -208,7 +210,7 @@ router.get("/:id/notes", async (req, res) => {
     }
 });
 
-router.post("/:id/notes", async (req, res) => {
+router.post("/:id/notes", canWrite, async (req, res) => {
     try {
         const body = req.body && typeof req.body.body === "string" ? req.body.body.trim() : "";
         if (!body) return res.status(400).json({ error: "note body is required" });
@@ -234,7 +236,7 @@ router.post("/:id/notes", async (req, res) => {
     }
 });
 
-router.put("/:id/notes/:noteId", async (req, res) => {
+router.put("/:id/notes/:noteId", canWrite, async (req, res) => {
     try {
         const hasBody = req.body && req.body.body !== undefined;
         let body;
@@ -262,7 +264,7 @@ router.put("/:id/notes/:noteId", async (req, res) => {
     }
 });
 
-router.delete("/:id/notes/:noteId", async (req, res) => {
+router.delete("/:id/notes/:noteId", canWrite, async (req, res) => {
     try {
         const removed = await ClientNoteService.remove(req.params.id, req.params.noteId);
         if (!removed) return res.status(404).json({ error: "Note not found" });

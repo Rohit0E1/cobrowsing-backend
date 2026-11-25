@@ -1,14 +1,16 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, requireRole, scopeOwner, WRITE_ROLES } = require("../middleware/auth");
 const MeetingService = require("../services/MeetingService");
 const RecordingService = require("../services/RecordingService");
 const { requireTenantMeeting } = require("../middleware/meetingAccess");
 
 const router = express.Router();
 
+const canWrite = requireRole(...WRITE_ROLES);
+
 // Create Meeting
-router.post("/", verifyToken, async (req, res) => {
+router.post("/", verifyToken, canWrite, async (req, res) => {
     try {
         const meeting = await MeetingService.create(req.user.tenantId, req.user.id, req.body);
         res.json(meeting);
@@ -21,7 +23,7 @@ router.post("/", verifyToken, async (req, res) => {
 // All Meetings (Dashboard)
 router.get("/all", verifyToken, async (req, res) => {
     try {
-        const meetings = await MeetingService.getAll(req.user.tenantId);
+        const meetings = await MeetingService.getAll(req.user.tenantId, scopeOwner(req.user));
         res.json(meetings);
     } catch (err) {
         
@@ -43,7 +45,7 @@ router.get("/:uuid", async (req, res) => {
 
 router.get("/:uuid/details", verifyToken, async (req, res) => {
     try {
-        const meeting = await MeetingService.getDetails(req.user.tenantId, req.params.uuid);
+        const meeting = await MeetingService.getDetails(req.user.tenantId, req.params.uuid, scopeOwner(req.user));
         if (!meeting) return res.status(404).json({ error: "Not found" });
         res.json(meeting);
     } catch (err) {
@@ -51,7 +53,7 @@ router.get("/:uuid/details", verifyToken, async (req, res) => {
     }
 });
 
-// Moderator Session Check — any logged-in user in the meeting's tenant may host it
+// Moderator Session Check — any tenant user who can see the meeting may host it
 router.get("/:uuid/moderator", verifyToken, requireTenantMeeting, (req, res) => {
     res.json({ status: "authorized", meeting: req.meeting });
 });
@@ -76,7 +78,7 @@ router.get("/:uuid/recordings", verifyToken, requireTenantMeeting, async (req, r
 });
 
 // Save Meeting Transcript
-router.patch("/:uuid/transcript", verifyToken, requireTenantMeeting, async (req, res) => {
+router.patch("/:uuid/transcript", verifyToken, canWrite, requireTenantMeeting, async (req, res) => {
     try {
         const { transcript } = req.body;
         if (typeof transcript !== "string") return res.status(400).json({ error: "transcript must be a string" });
@@ -89,7 +91,7 @@ router.patch("/:uuid/transcript", verifyToken, requireTenantMeeting, async (req,
 });
 
 // Add Meeting Note
-router.post("/:uuid/notes", verifyToken, requireTenantMeeting, async (req, res) => {
+router.post("/:uuid/notes", verifyToken, canWrite, requireTenantMeeting, async (req, res) => {
     try {
         const { note } = req.body;
         if (typeof note !== "string") return res.status(400).json({ error: "note must be a string" });
@@ -102,7 +104,7 @@ router.post("/:uuid/notes", verifyToken, requireTenantMeeting, async (req, res) 
 });
 
 // Edit Meeting Note
-router.patch("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (req, res) => {
+router.patch("/:uuid/notes/:noteId", verifyToken, canWrite, requireTenantMeeting, async (req, res) => {
     try {
         const { note } = req.body;
         if (typeof note !== "string") return res.status(400).json({ error: "note must be a string" });
@@ -115,7 +117,7 @@ router.patch("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (r
 });
 
 // Delete Meeting Note
-router.delete("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (req, res) => {
+router.delete("/:uuid/notes/:noteId", verifyToken, canWrite, requireTenantMeeting, async (req, res) => {
     try {
         const result = await MeetingService.deleteNote(req.params.uuid, req.params.noteId);
         if (!result) return res.status(404).json({ error: "Not found" });
@@ -126,7 +128,7 @@ router.delete("/:uuid/notes/:noteId", verifyToken, requireTenantMeeting, async (
 });
 
 // Force Reset Selection
-router.post("/:uuid/reset", verifyToken, requireTenantMeeting, async (req, res) => {
+router.post("/:uuid/reset", verifyToken, canWrite, requireTenantMeeting, async (req, res) => {
     try {
         await MeetingService.reset(req.params.uuid);
         res.json({ status: "success" });
