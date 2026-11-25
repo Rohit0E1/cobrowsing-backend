@@ -1,8 +1,10 @@
 const express = require('express');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requireRole, scopeOwner, WRITE_ROLES } = require('../middleware/auth');
 const SchedulingService = require('../services/SchedulingService');
 
 const router = express.Router();
+
+const canWrite = requireRole(...WRITE_ROLES);
 
 function isValidIndianPhone(raw) {
     const digits = String(raw).replace(/\D/g, "");
@@ -19,10 +21,10 @@ function normalizeIndianPhone(raw) {
     return digits;
 }
 
-// Get all scheduled meetings (scoped to requesting user)
+// Get scheduled meetings visible to the requesting user
 router.get('/', verifyToken, async (req, res) => {
     try {
-        const meetings = await SchedulingService.getAll(req.user.id);
+        const meetings = await SchedulingService.getAll(req.user.tenantId, scopeOwner(req.user));
         res.json(meetings);
     } catch (err) {
         console.error('[SCHEDULE] getAll error:', err);
@@ -31,7 +33,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Schedule a meeting
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, canWrite, async (req, res) => {
     try {
         const { client_name, client_email, client_phone, client_city, project_id, start_time } = req.body;
         if (!client_name || typeof client_name !== 'string' || !client_name.trim()) {
@@ -60,7 +62,7 @@ router.post('/', verifyToken, async (req, res) => {
         if (!start_time) {
             return res.status(400).json({ error: 'start_time is required' });
         }
-        const meeting = await SchedulingService.schedule(req.user.tenantId, req.user.id, {
+        const meeting = await SchedulingService.schedule(req.user.tenantId, req.user.id, scopeOwner(req.user), {
             client_name: client_name.trim(),
             client_email: client_email.trim().toLowerCase(),
             client_phone: client_phone ? String(client_phone).trim() : null,
@@ -90,7 +92,7 @@ router.get('/customers/lookup', verifyToken, async (req, res) => {
         if (!email && !phone) {
             return res.status(400).json({ error: 'email or phone query param required' });
         }
-        const match = await SchedulingService.lookupCustomer(req.user.tenantId, { email, phone });
+        const match = await SchedulingService.lookupCustomer(req.user.tenantId, scopeOwner(req.user), { email, phone });
         res.json({ match });
     } catch (err) {
         console.error('[SCHEDULE] lookupCustomer error:', err);
@@ -99,11 +101,11 @@ router.get('/customers/lookup', verifyToken, async (req, res) => {
 });
 
 // Reschedule a meeting
-router.put('/:id/reschedule', verifyToken, async (req, res) => {
+router.put('/:id/reschedule', verifyToken, canWrite, async (req, res) => {
     try {
         const { start_time } = req.body;
         if (!start_time) return res.status(400).json({ error: 'start_time is required' });
-        const meeting = await SchedulingService.reschedule(req.params.id, req.user.id, { start_time });
+        const meeting = await SchedulingService.reschedule(req.params.id, req.user, { start_time });
         if (!meeting) return res.status(404).json({ error: 'Scheduled meeting not found or not authorized' });
         res.json(meeting);
     } catch (err) {
@@ -117,13 +119,13 @@ router.put('/:id/reschedule', verifyToken, async (req, res) => {
     }
 });
 
-router.post('/:id/resend', verifyToken, async (req, res) => {
+router.post('/:id/resend', verifyToken, canWrite, async (req, res) => {
     try {
         const mode = req.body && req.body.mode;
         if (mode !== undefined && mode !== 'invite' && mode !== 'reschedule') {
             return res.status(400).json({ error: 'mode must be invite or reschedule' });
         }
-        const meeting = await SchedulingService.resend(req.params.id, req.user.tenantId, req.user.id, { mode });
+        const meeting = await SchedulingService.resend(req.params.id, req.user, { mode });
         if (!meeting) return res.status(404).json({ error: 'Scheduled meeting not found or not authorized' });
         res.json({ status: 'sent', id: meeting.id, meeting_uuid: meeting.meeting_uuid, channels: meeting.client_phone ? ['email', 'whatsapp'] : ['email'] });
     } catch (err) {
@@ -134,9 +136,9 @@ router.post('/:id/resend', verifyToken, async (req, res) => {
 });
 
 // Cancel a meeting
-router.delete('/:id/cancel', verifyToken, async (req, res) => {
+router.delete('/:id/cancel', verifyToken, canWrite, async (req, res) => {
     try {
-        const meeting = await SchedulingService.cancel(req.params.id, req.user.id);
+        const meeting = await SchedulingService.cancel(req.params.id, req.user);
         if (!meeting) return res.status(404).json({ error: 'Scheduled meeting not found or not authorized' });
         res.json(meeting);
     } catch (err) {
@@ -149,7 +151,7 @@ router.delete('/:id/cancel', verifyToken, async (req, res) => {
 // Get single scheduled meeting
 router.get('/:id', verifyToken, async (req, res) => {
     try {
-        const meeting = await SchedulingService.getById(req.params.id, req.user.id);
+        const meeting = await SchedulingService.getById(req.params.id, req.user);
         if (!meeting) return res.status(404).json({ error: 'Not found' });
         res.json(meeting);
     } catch (err) {

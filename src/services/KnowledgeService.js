@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { pool } = require('../config/db');
 const { vertexClient } = require('../config/vertex');
+const { ownsClient, ownsMeeting } = require('./AccessScope');
 
 /**
  * Meaning search over what advisors wrote and said: meeting transcripts, meeting notes, client notes.
@@ -231,7 +232,7 @@ function queue(scope) {
  * The chunks closest in meaning to the question, within one tenant and optionally one client. Private chunks
  * (an advisor's emails and assistant conversations) only show to their owner, `userId`.
  */
-async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
+async function search({ tenantId, userId, owner = null, query, clientId = null, limit = 5 }) {
     if (!(await isAvailable())) throw Object.assign(new Error('Knowledge search is not set up'), { status: 503 });
     const [vector] = await embed([query], 'RETRIEVAL_QUERY');
     // shortcut: exact scan, no vector index; fine for thousands of chunks per tenant. Add an HNSW index
@@ -247,11 +248,14 @@ async function search({ tenantId, userId, query, clientId = null, limit = 5 }) {
                 -- The advisor's talks with the assistant belong to no client: count those that mention this one.
                 OR (k.source = 'assistant' AND k.text ILIKE '%' || (SELECT split_part(name, ' ', 1) FROM clients WHERE id = $3) || '%'))
            AND (k.owner_user_id IS NULL OR k.owner_user_id = $5)
+           AND ($8::int IS NULL OR k.owner_user_id = $8::int
+                OR k.client_id IN (SELECT oc.id FROM clients oc WHERE ${ownsClient('$8', 'oc.')})
+                OR k.meeting_uuid IN (SELECT om.uuid FROM meetings om WHERE ${ownsMeeting('$8', 'om.')}))
          ORDER BY (k.embedding <=> $2::vector) - CASE WHEN $6 AND k.source = 'email' THEN $7::float ELSE 0 END
          LIMIT $4`,
         [
             tenantId, toVector(vector), clientId, Math.min(Math.max(Number(limit) || 5, 1), 20), userId ?? null,
-            asksAboutEmail(query), EMAIL_BOOST,
+            asksAboutEmail(query), EMAIL_BOOST, owner,
         ],
     );
     return rows.map((r) => ({

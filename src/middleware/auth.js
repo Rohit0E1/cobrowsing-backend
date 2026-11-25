@@ -1,8 +1,14 @@
 const jwt = require("jsonwebtoken");
 const { pool } = require("../config/db");
+const { ownsMeeting } = require("../services/AccessScope");
+
+const ROLES = ["super_admin", "admin", "manager", "advisor", "consultant", "viewer"];
+const TENANT_WIDE_ROLES = ["super_admin", "admin", "manager", "viewer"];
+const WRITE_ROLES = ["super_admin", "admin", "manager", "advisor", "consultant"];
+const TEAM_ADMIN_ROLES = ["super_admin", "admin"];
 
 /**
- * The advisor behind a login token, or null if it is missing, invalid, expired or has no tenant.
+ * The advisor behind a login token, or null if it is missing, invalid, expired or has no membership in its tenant.
  * Shared by the HTTP middleware below and the socket join (which has no Express request).
  */
 async function userFromToken(token) {
@@ -14,13 +20,14 @@ async function userFromToken(token) {
         return null;
     }
 
-    let tenantId = decoded.tenant_id;
-    if (!Number.isInteger(tenantId)) {
-        const row = await pool.query("SELECT tenant_id FROM users WHERE id = $1", [decoded.id]);
-        tenantId = row.rows[0]?.tenant_id;
-        if (!Number.isInteger(tenantId)) return null;
-    }
-    return { id: decoded.id, email: decoded.email, tenantId };
+    const row = await pool.query(
+        `SELECT ut.tenant_id, ut.role FROM user_tenants ut
+         WHERE ut.user_id = $1 AND ut.tenant_id = COALESCE($2::int, (SELECT tenant_id FROM users WHERE id = $1))`,
+        [decoded.id, Number.isInteger(decoded.tenant_id) ? decoded.tenant_id : null]
+    );
+    const membership = row.rows[0];
+    if (!membership) return null;
+    return { id: decoded.id, email: decoded.email, tenantId: membership.tenant_id, role: membership.role };
 }
 
 /** The bearer token from an Authorization header, if any. */
@@ -46,14 +53,26 @@ const verifyToken = async (req, res, next) => {
 };
 
 /**
- * True when the token belongs to an advisor of the tenant that owns the meeting room: the same rule as
+ * True when the token belongs to a non-viewer advisor who can see the meeting room: the same rule as
  * requireTenantMeeting, for places that hand out moderator powers (socket join, EnableX moderator token).
  */
 async function canModerate(token, uuid) {
     const user = await userFromToken(token);
-    if (!user) return false;
-    const { rows } = await pool.query("SELECT tenant_id FROM meetings WHERE uuid = $1", [uuid]);
-    return rows[0]?.tenant_id === user.tenantId;
+    if (!user || !WRITE_ROLES.includes(user.role)) return false;
+    const { rows } = await pool.query(
+        `SELECT 1 FROM meetings WHERE uuid = $1 AND tenant_id = $2 AND ${ownsMeeting("$3")}`,
+        [uuid, user.tenantId, scopeOwner(user)]
+    );
+    return rows.length > 0;
 }
 
-module.exports = { verifyToken, userFromToken, canModerate, bearer };
+const requireRole = (...roles) => (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+        return res.status(403).json({ error: "You do not have permission to do this" });
+    }
+    next();
+};
+
+const scopeOwner = (user) => (TENANT_WIDE_ROLES.includes(user.role) ? null : user.id);
+
+module.exports = { verifyToken, userFromToken, canModerate, bearer, requireRole, scopeOwner, ROLES, WRITE_ROLES, TEAM_ADMIN_ROLES };

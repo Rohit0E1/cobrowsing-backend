@@ -1,5 +1,5 @@
 const express = require('express');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, scopeOwner } = require('../middleware/auth');
 const KnowledgeService = require('../services/KnowledgeService');
 const EmailKnowledgeService = require('../services/EmailKnowledgeService');
 
@@ -20,6 +20,7 @@ router.post('/search', verifyToken, async (req, res) => {
         const results = await KnowledgeService.search({
             tenantId: req.user.tenantId,
             userId: req.user.id,
+            owner: scopeOwner(req.user),
             query: query.trim(),
             clientId: client,
             limit,

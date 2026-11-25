@@ -19,6 +19,7 @@ const DETAILS_SELECT = `
     LEFT JOIN users u ON m.moderator_id = u.id
     LEFT JOIN scheduled_meetings sm ON sm.meeting_uuid = m.uuid AND sm.tenant_id = m.tenant_id
     LEFT JOIN projects pr ON pr.id = sm.project_id`;
+const { ownsMeeting } = require("./AccessScope");
 
 const MeetingService = {
     async create(tenantId, moderatorId, { start_time, duration, meeting_for }) {
@@ -72,12 +73,14 @@ const MeetingService = {
         return res.rows[0] || null;
     },
 
-    async getAll(tenantId) {
+    async getAll(tenantId, owner = null) {
         const res = await pool.query(`
             SELECT
                 m.*,
                 u.name AS moderator_name,
                 ${CLIENTS_JOINED_SQL} AS client_count,
+                MAX(p.joined_at) FILTER (WHERE p.role = 'participant') AS last_attended_at,
+                COALESCE(m.started_at, MIN(p.joined_at)) AS session_started_at,
                 (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count,
                 -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
                 sm.id AS schedule_id,
@@ -88,15 +91,15 @@ const MeetingService = {
             LEFT JOIN users u ON m.moderator_id = u.id
             LEFT JOIN participants p ON p.meeting_id = m.id
             LEFT JOIN scheduled_meetings sm ON sm.meeting_uuid = m.uuid
-            WHERE m.tenant_id = $1
+            WHERE m.tenant_id = $1 AND ${ownsMeeting("$2", "m.")}
             GROUP BY m.id, u.name, sm.id
             ORDER BY m.id DESC
-        `, [tenantId]);
+        `, [tenantId, owner]);
         return res.rows;
     },
 
-    async getDetails(tenantId, uuid) {
-        const res = await pool.query(`${DETAILS_SELECT} WHERE m.tenant_id = $1 AND m.uuid = $2`, [tenantId, uuid]);
+    async getDetails(tenantId, uuid, owner = null) {
+        const res = await pool.query(`${DETAILS_SELECT} WHERE m.tenant_id = $1 AND m.uuid = $2 AND ${ownsMeeting("$3", "m.")}`, [tenantId, uuid, owner]);
         return res.rows[0] || null;
     },
 
@@ -110,6 +113,12 @@ const MeetingService = {
             [tenantId, clientId]
         );
         return res.rows;
+    },
+
+    async isVisibleTo(meetingPk, owner) {
+        if (owner == null) return true;
+        const res = await pool.query(`SELECT 1 FROM meetings WHERE id = $1 AND ${ownsMeeting("$2")}`, [meetingPk, owner]);
+        return res.rowCount > 0;
     },
 
     async reset(uuid) {
@@ -162,6 +171,25 @@ const MeetingService = {
         await pool.query(
             "INSERT INTO participants (meeting_id, socket_id, name, mobile, role, location) VALUES ($1, $2, $3, $4, $5, $6)",
             [meetingPk, socketId, name, mobile, role, location ? JSON.stringify(location) : null]
+        );
+        await pool.query(
+            "INSERT INTO events (meeting_id, event_id, name, time, duration, user_name, user_mobile) VALUES ($1, $2, $3, NOW(), 0, $4, $5)",
+            [meetingPk, role === "moderator" ? "moderator_joined" : "participant_joined", `${name} joined the session`, name, mobile]
+        );
+    },
+
+    async markSessionStarted(meetingPk) {
+        await pool.query(
+            `UPDATE meetings SET started_at = NOW()
+             WHERE id = $1 AND (started_at IS NULL OR (completed_at IS NOT NULL AND completed_at >= started_at))`,
+            [meetingPk]
+        );
+    },
+
+    async markSessionEnded(meetingPk) {
+        await pool.query(
+            "INSERT INTO events (meeting_id, event_id, name, time, duration) VALUES ($1, 'session_ended', 'Session ended', NOW(), 0)",
+            [meetingPk]
         );
     },
 

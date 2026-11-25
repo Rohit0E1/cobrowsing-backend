@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const UserService = require("../services/UserService");
 const TenantService = require("../services/TenantService");
 const { DEFAULT_TENANT_SLUG } = require("../config/db");
-const { verifyToken } = require("../middleware/auth");
+const { verifyToken, requireRole, ROLES, TEAM_ADMIN_ROLES } = require("../middleware/auth");
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
@@ -13,7 +13,7 @@ router.post("/register", async (req, res) => {
     }
     try {
         const tenant = await TenantService.getBySlug(DEFAULT_TENANT_SLUG);
-        const user = await UserService.register(tenant.id, { name, email, phone, password, project_ids });
+        const user = await UserService.register(tenant.id, { name, email, phone, password, project_ids }, "consultant");
         res.status(201).json({ status: "success", data: user });
     } catch (err) {
         if (err.code === "23505") {
@@ -66,6 +66,35 @@ router.post("/switch-tenant", verifyToken, async (req, res) => {
         res.json({ status: "success", token, tenant });
     } catch (err) {
         res.status(500).json({ status: "error", message: "Failed to switch tenant" });
+    }
+});
+
+router.get("/team", verifyToken, requireRole(...TEAM_ADMIN_ROLES, "manager"), async (req, res) => {
+    try {
+        res.json({ status: "success", members: await TenantService.listMembers(req.user.tenantId) });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: "Failed to load team" });
+    }
+});
+
+router.patch("/team/:userId/role", verifyToken, requireRole(...TEAM_ADMIN_ROLES), async (req, res) => {
+    const userId = Number(req.params.userId);
+    const role = req.body?.role;
+    if (!Number.isInteger(userId) || userId <= 0 || !ROLES.includes(role)) {
+        return res.status(400).json({ status: "error", message: `role must be one of: ${ROLES.join(", ")}` });
+    }
+    if (userId === req.user.id) {
+        return res.status(400).json({ status: "error", message: "You cannot change your own role" });
+    }
+    if (role === "super_admin" && req.user.role !== "super_admin") {
+        return res.status(403).json({ status: "error", message: "Only a super admin can grant super admin" });
+    }
+    try {
+        const member = await TenantService.setMemberRole(req.user.tenantId, userId, role, req.user.role === "super_admin");
+        if (!member) return res.status(404).json({ status: "error", message: "Team member not found" });
+        res.json({ status: "success", member });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: "Failed to update role" });
     }
 });
 

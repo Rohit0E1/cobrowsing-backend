@@ -51,14 +51,14 @@ async function main() {
     if (adminEmail) {
         const existing = await UserService.findByEmail(adminEmail);
         if (existing) {
-            await TenantService.addMember(existing.id, tenant.id);
+            await TenantService.addMember(existing.id, tenant.id, "admin");
             console.log(`Existing user #${existing.id} ${existing.email} can now switch to ${tenant.slug}`);
             return;
         }
         if (!values["admin-name"] || !password || password.length < 8) {
             throw new Error("New --admin-email needs --admin-name and TENANT_ADMIN_PASSWORD (min 8 chars)");
         }
-        const user = await UserService.register(tenant.id, { name: values["admin-name"], email: adminEmail, password });
+        const user = await UserService.register(tenant.id, { name: values["admin-name"], email: adminEmail, password }, "admin");
         console.log(`Admin user #${user.id} ${user.email}`);
     }
 }
