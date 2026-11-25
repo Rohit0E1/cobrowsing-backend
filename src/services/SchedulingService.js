@@ -98,7 +98,7 @@ const SchedulingService = {
                 meeting_for: meeting.client_name
             });
             uuid = roomRow.uuid;
-            roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + uuid;
+            roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant/' + uuid;
         } catch (roomErr) {
             console.error('[SCHEDULE] Meeting room creation failed:', roomErr.message);
             await pool.query('DELETE FROM scheduled_meetings WHERE id = $1', [meeting.id]);
@@ -182,7 +182,7 @@ const SchedulingService = {
 
         const existingUuid = existing.meeting_uuid;
         const roomLink = existingUuid
-            ? (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + existingUuid
+            ? (process.env.APP_URL || 'http://localhost:3000') + '/participant/' + existingUuid
             : null;
 
         const salesperson = await getSalesperson(userId);
