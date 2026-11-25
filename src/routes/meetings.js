@@ -41,6 +41,16 @@ router.get("/:uuid", async (req, res) => {
     }
 });
 
+router.get("/:uuid/details", verifyToken, async (req, res) => {
+    try {
+        const meeting = await MeetingService.getDetails(req.user.tenantId, req.params.uuid);
+        if (!meeting) return res.status(404).json({ error: "Not found" });
+        res.json(meeting);
+    } catch (err) {
+        res.status(500).json({ error: "Fetch error" });
+    }
+});
+
 // Moderator Session Check — any logged-in user in the meeting's tenant may host it
 router.get("/:uuid/moderator", verifyToken, requireTenantMeeting, (req, res) => {
     res.json({ status: "authorized", meeting: req.meeting });

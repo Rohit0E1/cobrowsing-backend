@@ -292,6 +292,26 @@ const SchedulingService = {
         return updated;
     },
 
+    async resend(id, tenantId, userId, { mode } = {}) {
+        const safeId = validateId(id);
+        const row = await pool.query(
+            'SELECT * FROM scheduled_meetings WHERE id = $1 AND tenant_id = $2',
+            [safeId, tenantId]
+        );
+        const existing = row.rows[0];
+        if (!existing) return null;
+        if (existing.status === 'cancelled') throw new Error('Cannot resend a cancelled meeting');
+        if (!existing.meeting_uuid) throw new Error('Invalid meeting: no session room');
+
+        const roomLink = (process.env.APP_URL || 'http://localhost:3000') + '/participant?meetingId=' + existing.meeting_uuid;
+        const icalUid = buildIcalUid(existing.meeting_uuid);
+        const salesperson = await getSalesperson(userId);
+        const send = mode === 'reschedule' ? NotificationService.sendReschedule : NotificationService.sendInvite;
+        await send(existing.client_email, existing.client_name, existing.client_phone, existing.start_time, roomLink, icalUid, salesperson);
+
+        return existing;
+    },
+
     async getAll(userId) {
         const res = await pool.query(
             `SELECT sm.*, u.name AS created_by_name
