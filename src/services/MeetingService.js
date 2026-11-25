@@ -1,6 +1,24 @@
 const KnowledgeService = require("./KnowledgeService");
 const { randomBytes } = require("node:crypto");
 const { pool } = require("../config/db");
+const { CLIENTS_JOINED_SQL } = require("./AnalyticsService");
+
+const DETAILS_SELECT = `
+    SELECT
+        m.*,
+        u.name AS moderator_name,
+        (SELECT ${CLIENTS_JOINED_SQL} FROM participants p WHERE p.meeting_id = m.id) AS client_count,
+        (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count,
+        sm.id AS schedule_id,
+        sm.client_id,
+        sm.client_name,
+        sm.calendar_event_id,
+        sm.status AS schedule_status,
+        pr.name AS project_name
+    FROM meetings m
+    LEFT JOIN users u ON m.moderator_id = u.id
+    LEFT JOIN scheduled_meetings sm ON sm.meeting_uuid = m.uuid AND sm.tenant_id = m.tenant_id
+    LEFT JOIN projects pr ON pr.id = sm.project_id`;
 
 const MeetingService = {
     async create(tenantId, moderatorId, { start_time, duration, meeting_for }) {
@@ -39,7 +57,7 @@ const MeetingService = {
                 m.*,
                 u.name AS moderator_name,
                 t.deck_origin,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                ${CLIENTS_JOINED_SQL} AS client_count,
                 EXISTS (
                     SELECT 1 FROM scheduled_meetings sm WHERE sm.meeting_uuid = m.uuid AND sm.status = 'cancelled'
                 ) AS cancelled
@@ -59,7 +77,7 @@ const MeetingService = {
             SELECT
                 m.*,
                 u.name AS moderator_name,
-                COUNT(p.id) FILTER (WHERE p.role = 'participant') AS client_count,
+                ${CLIENTS_JOINED_SQL} AS client_count,
                 (SELECT COUNT(*) FROM meeting_recordings r WHERE r.meeting_id = m.id AND r.status <> 'none')::int AS recording_count,
                 -- The schedule row (if this room was scheduled): its id is what reschedule/cancel take.
                 sm.id AS schedule_id,
@@ -74,6 +92,23 @@ const MeetingService = {
             GROUP BY m.id, u.name, sm.id
             ORDER BY m.id DESC
         `, [tenantId]);
+        return res.rows;
+    },
+
+    async getDetails(tenantId, uuid) {
+        const res = await pool.query(`${DETAILS_SELECT} WHERE m.tenant_id = $1 AND m.uuid = $2`, [tenantId, uuid]);
+        return res.rows[0] || null;
+    },
+
+    async listForClient(tenantId, clientId) {
+        const res = await pool.query(
+            `${DETAILS_SELECT}
+             WHERE m.tenant_id = $1
+               AND (sm.client_id = $2
+                    OR (sm.client_id IS NULL AND LOWER(sm.client_email) = (SELECT LOWER(email) FROM clients WHERE id = $2 AND tenant_id = $1)))
+             ORDER BY m.start_time DESC, m.id DESC`,
+            [tenantId, clientId]
+        );
         return res.rows;
     },
 

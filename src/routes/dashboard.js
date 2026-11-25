@@ -57,8 +57,13 @@ router.get("/meetings", verifyToken, handle("meetings", (req, tr) => DashboardSe
 router.get("/activities", verifyToken, async (req, res) => {
     try {
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const type = req.query.type || null;
+        if (type && !DashboardService.ACTIVITY_TYPES.includes(type)) {
+            return res.status(400).json({ error: `type must be one of: ${DashboardService.ACTIVITY_TYPES.join(", ")}` });
+        }
         const timeRange = parseTimeRange(req);
-        res.json(await DashboardService.activities(req.user.tenantId, limit, timeRange));
+        res.json(await DashboardService.activities(req.user.tenantId, limit, timeRange, { type, offset: (page - 1) * limit }));
     } catch (err) {
         console.error("[DASHBOARD] activities error:", err);
         res.status(500).json({ error: "Failed to load activities" });

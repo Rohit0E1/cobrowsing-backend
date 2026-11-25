@@ -149,7 +149,9 @@ const DashboardService = {
         };
     },
 
-    async activities(tenantId, limit = 20, tr = {}) {
+    ACTIVITY_TYPES: ["lead_created", "meeting_started", "meeting_completed", "meeting_scheduled"],
+
+    async activities(tenantId, limit = 20, tr = {}, { type = null, offset = 0 } = {}) {
         const params = [tenantId];
         let clientF = "WHERE tenant_id = $1";
         let meetingF = "WHERE tenant_id = $1";
@@ -162,8 +164,12 @@ const DashboardService = {
             schedF += " AND created_at BETWEEN $2 AND $3";
         }
  
+        params.push(type);
+        const typeParam = `$${params.length}`;
         params.push(limit);
         const limitParam = `$${params.length}`;
+        params.push(offset);
+        const offsetParam = `$${params.length}`;
  
         const res = await pool.query(
                        `
@@ -196,8 +202,9 @@ const DashboardService = {
                 FROM scheduled_meetings
                 ${schedF}
             ) feed
+            WHERE ${typeParam}::text IS NULL OR type = ${typeParam}
             ORDER BY created_at DESC
-            LIMIT ${limitParam}
+            LIMIT ${limitParam} OFFSET ${offsetParam}
             `,
             params
         );

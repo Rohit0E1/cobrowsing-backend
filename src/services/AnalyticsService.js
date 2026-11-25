@@ -1,6 +1,10 @@
 const { pool } = require("../config/db");
 
+const CLIENTS_JOINED_SQL = "COUNT(DISTINCT COALESCE(NULLIF(p.mobile, ''), LOWER(p.name))) FILTER (WHERE p.role = 'participant')";
+
 const AnalyticsService = {
+    CLIENTS_JOINED_SQL,
+
     /**
      * Finalizes a meeting session:
      *   1. Marks is_active = false
@@ -20,7 +24,7 @@ const AnalyticsService = {
             const statsRes = await client.query(
                 `SELECT
                     COUNT(*) FILTER (WHERE event_id = 'client_interaction') AS interactions,
-                    COUNT(DISTINCT user_name) FILTER (WHERE event_id NOT LIKE 'moderator_%') AS unique_clients,
+                    (SELECT ${CLIENTS_JOINED_SQL} FROM participants p WHERE p.meeting_id = $1) AS unique_clients,
                     COUNT(*) FILTER (WHERE event_id = 'slide_view') AS slide_views
                 FROM events WHERE meeting_id = $1`,
                 [meetingPk]

@@ -3,6 +3,7 @@ const { verifyToken } = require("../middleware/auth");
 const ClientService = require("../services/ClientService");
 const ClientNoteService = require("../services/ClientNoteService");
 const ClientActivityService = require("../services/ClientActivityService");
+const MeetingService = require("../services/MeetingService");
 
 const router = express.Router();
 
@@ -183,6 +184,16 @@ router.get("/:id/activities", async (req, res) => {
         const status = err.message && err.message.includes("Invalid") ? 400 : 500;
         if (status === 500) console.error("[CLIENTS] activities error:", err);
         res.status(status).json({ error: err.message || "Failed to load activities" });
+    }
+});
+
+router.get("/:id/meetings", async (req, res) => {
+    try {
+        const meetings = await MeetingService.listForClient(req.user.tenantId, parseInt(req.params.id, 10));
+        res.json({ meetings });
+    } catch (err) {
+        console.error("[CLIENTS] meetings error:", err);
+        res.status(500).json({ error: "Failed to load meetings" });
     }
 });
 

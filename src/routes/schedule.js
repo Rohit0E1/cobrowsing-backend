@@ -117,6 +117,22 @@ router.put('/:id/reschedule', verifyToken, async (req, res) => {
     }
 });
 
+router.post('/:id/resend', verifyToken, async (req, res) => {
+    try {
+        const mode = req.body && req.body.mode;
+        if (mode !== undefined && mode !== 'invite' && mode !== 'reschedule') {
+            return res.status(400).json({ error: 'mode must be invite or reschedule' });
+        }
+        const meeting = await SchedulingService.resend(req.params.id, req.user.tenantId, req.user.id, { mode });
+        if (!meeting) return res.status(404).json({ error: 'Scheduled meeting not found or not authorized' });
+        res.json({ status: 'sent', id: meeting.id, meeting_uuid: meeting.meeting_uuid, channels: meeting.client_phone ? ['email', 'whatsapp'] : ['email'] });
+    } catch (err) {
+        const status = err.message && (err.message.includes('Invalid') || err.message.includes('cancelled')) ? 400 : 500;
+        if (status === 500) console.error('[SCHEDULE] resend error:', err);
+        res.status(status).json({ error: status === 400 ? err.message : 'Failed to resend invitation' });
+    }
+});
+
 // Cancel a meeting
 router.delete('/:id/cancel', verifyToken, async (req, res) => {
     try {
