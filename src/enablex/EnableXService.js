@@ -18,7 +18,7 @@ const axiosInstance = axios.create({
 
 function recordingSettings(meetingUUID) {
   const recorderUrl = process.env.ENABLEX_RECORDER_URL;
-  if (!recorderUrl) return { auto_recording: true };
+  if (!recorderUrl) return { auto_recording: false };
   const key = jwt.sign({ typ: "recorder", uuid: meetingUUID }, process.env.JWT_SECRET, { expiresIn: "2d" });
   return {
     auto_recording: false,
